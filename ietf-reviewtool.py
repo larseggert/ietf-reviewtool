@@ -250,7 +250,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
             write(text, item)
 
 
-def compute_diff(orig: str, rev: str) -> str:
+def review_item(orig: str, rev: str) -> dict:
     """
     Calculates a diff between orig and rev..
 
@@ -259,31 +259,31 @@ def compute_diff(orig: str, rev: str) -> str:
 
     @return     A diff between orig and rev.
     """
-    diff = difflib.ndiff(orig, rev, linejunk=None, charjunk=None)
+    review = {"discuss": [], "comment": [], "nit": []}
     changed = {"+": [], "-": []}
     indicator = {"+": [], "-": []}
     context = {}
     prev = None
     section = None
     para = 0
-    for line in diff:
-        # print("XX", line, end="", sep="")
 
-        context_start = re.search(r"^\+ (DISCUSS): *(.*)", line)
+    for line in difflib.ndiff(orig, rev, linejunk=None, charjunk=None):
+        context_start = re.search(
+            r"^\+ (D(?:ISCUSS)?|C(?:OMMENT)?|N(?:IT))?: *(.*)", line
+        )
         if context_start:
-            context["type"] = context_start.group(1)
+            context["category"] = context_start.group(1).lower()
             context["section"] = section
             context["para"] = para
             context["inline"] = context_start.group(2) != ""
             context["text"] = []
             context["complete"] = False
-            # print(context)
             if context["inline"]:
-                line = re.sub(r"" + context["type"] + ": *", "", line)
+                line = re.sub(r"" + context["category"] + ": *", "", line)
             else:
                 continue
 
-        if "type" in context and not context["complete"]:
+        if "category" in context and not context["complete"]:
             if re.search(r"^[\- ] ", line):
                 context["text"].append(line)
                 continue
@@ -292,8 +292,8 @@ def compute_diff(orig: str, rev: str) -> str:
         # track sections
         potential_section = re.search(
             r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
-            Table[ ]of[ ]Contents|Author('?s?'?)?[ ]Address(es)?|
-            [0-9]+(\.[0-9]+)*\.?)""",
+            Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
+            [0-9]+(?:\.[0-9]+)*\.?)""",
             line,
             re.VERBOSE,
         )
@@ -310,58 +310,56 @@ def compute_diff(orig: str, rev: str) -> str:
         kind = re.search(r"^([+? -]) ", line).group(1)
 
         if kind == " ":
-            printed = False
-
+            complete = False
+            category = "nit"
             if changed["+"] or changed["-"]:
                 if "complete" in context and context["complete"]:
-                    print(
-                        context["section"],
-                        ", paragraph ",
-                        context["para"],
-                        ", ",
-                        context["type"],
-                        ":",
-                        sep="",
+                    category = context["category"]
+                    review[category].append(
+                        f"{context['section']}, "
+                        f"paragraph {context['para']}, "
+                        f"{category}:\n"
                     )
+
+                    for context_line in context["text"]:
+                        if not re.match(r"^.. *$", context_line):
+                            quoted = re.sub(r"^..(.*)", r"> \1", context_line)
+                            review[category].append(quoted)
+                    if context["text"]:
+                        review[category].append("\n")
+                    context = {}
                 else:
-                    print(section, ", paragraph ", para, ":", sep="")
+                    review[category].append(
+                        f"{section}, paragraph {para}, nit:\n"
+                    )
 
-            if "complete" in context and context["complete"]:
-                for context_line in context["text"]:
-                    if not re.match(r"^.. *$", context_line):
-                        quoted = re.sub(r"^..(.*)", r"> \1", context_line)
-                        print(quoted, end="")
-                if context["text"]:
-                    print()
-                context = {}
-
-            for kind in ["-", "+"]:
+            for prefix in ["-", "+"]:
                 # if there are no changes, continue
-                if not changed[kind]:
+                if not changed[prefix]:
                     continue
 
-                for i in range(len(changed[kind])):
+                for i in range(len(changed[prefix])):
                     # skip changes that add or remove empty lines
-                    if changed[kind][i] in ("+ \n", "- \n"):
+                    if changed[prefix][i] in ("+ \n", "- \n"):
                         continue
 
-                    # print the changed line followed by an indicator line
+                    # add the changed line followed by an indicator line
                     # (if present)
-                    print(changed[kind][i], end="")
-                    if indicator[kind][i] is not None:
-                        ind = indicator[kind][i].replace("?", " ", 1)
-                        print(ind, end="")
-                    printed = True
+                    review[category].append(changed[prefix][i])
+                    if indicator[prefix][i] is not None:
+                        ind = indicator[prefix][i].replace("?", " ", 1)
+                        review[category].append(ind)
+                    complete = True
 
                 # clear the state
-                changed[kind] = []
-                indicator[kind] = []
+                changed[prefix] = []
+                indicator[prefix] = []
 
             prev = None
 
-            if printed:
+            if complete:
                 # separate next diff with a newline
-                print()
+                review[category].append("\n")
 
         elif kind in ("+", "-"):
             # store the changed line
@@ -383,6 +381,15 @@ def compute_diff(orig: str, rev: str) -> str:
 
         else:
             die("Unknown diff line: ", line)
+
+    return review
+
+
+def fmt_review(review: dict) -> None:
+    for category in ["discuss", "comment", "nit"]:
+        print(category.upper())
+        for line in review[category]:
+            print(line, end="")
 
 
 def review_items(items: list, datatracker: str) -> None:
@@ -408,7 +415,8 @@ def review_items(items: list, datatracker: str) -> None:
             orig = read(orig_item).splitlines(keepends=True)
             os.chdir(current_directory)
             rev = read(item).splitlines(keepends=True)
-            compute_diff(orig, rev)
+            review = review_item(orig, rev)
+            fmt_review(review)
 
 
 def parse_args() -> dict:
