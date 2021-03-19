@@ -5,12 +5,27 @@ Review tool for IETF documents.
 """
 
 import argparse
+import difflib
 import json
 import logging
 import os
 import re
+import tempfile
 import urllib.error
 import urllib.request
+import sys
+
+
+def die(msg: list, err: int = 1) -> None:
+    """
+    Print a message and exit with an error code.
+
+    @param      msg   The message to print.
+
+    @return
+    """
+    logging.error(msg)
+    sys.exit(err)
 
 
 def fetch_url(url: str) -> str:
@@ -31,6 +46,35 @@ def fetch_url(url: str) -> str:
     except (urllib.error.URLError, urllib.error.HTTPError) as err:
         logging.error("%s -> %s", url, err)
         return None
+    return text
+
+
+def read(file_name: str) -> str:
+    """
+    Read a file into a string.
+
+    @param      file_name  The item to read.
+
+    @return     The content of the item.
+    """
+    file = open(file_name, "r")
+    text = file.read()
+    file.close()
+    return text
+
+
+def write(text: str, file_name: str) -> None:
+    """
+    Write a string into a file.
+
+    @param      text       The text to write.
+    @param      file_name  The file name to write to.
+
+    @return     -
+    """
+    file = open(file_name, "w")
+    text = file.write(text)
+    file.close()
     return text
 
 
@@ -141,30 +185,47 @@ def get_items(items: list, datatracker: str, strip: bool = True) -> None:
             logging.warning("%s exists, skipping", file_name)
             continue
 
-        logging.info("Downloading %s", item)
+        logging.info("Getting %s", item)
+        cache = None
         if item.startswith("draft-"):
             url = "https://www.ietf.org/archive/id/" + file_name
+            cache = os.getenv("IETF_IDS")
         elif item.startswith("rfc"):
             url = "https://rfc-editor.org/rfc/" + file_name
+            cache = os.getenv("IETF_RFCS")
         elif item.startswith("charter-"):
             url_pattern = re.sub(
                 r"(.*)(((-[0-9]+){2}).txt)$", r"\1/withmilestones\2", file_name
             )
             url = datatracker + "/doc/" + url_pattern
-            strip = False  # don't strip charters
-        text = fetch_url(url)
+            # TODO: the charters in rsync are wrapped differently, can't use
+            # cache = os.getenv("IETF_CHARTERS")
+            strip = False  # don't strip charters for review
+        else:
+            die("Unknown item type: %s", item)
+
+        text = None
+        if cache is not None:
+            cache_file = os.path.join(cache, file_name)
+            if os.path.isfile(cache_file):
+                logging.debug("Using cached %s", item)
+                text = read(cache_file)
+            else:
+                logging.debug("No cached copy of %s in %s", item, cache)
+
+        if text is None:
+            text = fetch_url(url)
+
         if strip:
             logging.debug("Stripping %s", item)
             text = strip_pagination(text)
         if text is not None:
-            file = open(file_name, "w")
-            file.write(text)
-            file.close()
+            write(text, file_name)
 
 
 def strip_items(items: list, in_place: bool = False) -> None:
     """
-    Run strip_pagination over the named items
+    Run strip_pagination over the named items.
 
     @param      items  The items to strip.
 
@@ -176,9 +237,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
             logging.warning("%s does not exist, skipping", item)
             continue
 
-        file = open(item, "r")
-        text = strip_pagination(file.read())
-        file.close()
+        text = strip_pagination(read(item))
 
         if text is not None:
             if not in_place:
@@ -188,19 +247,182 @@ def strip_items(items: list, in_place: bool = False) -> None:
                     continue
 
             logging.debug("Saving stripped version as %s", item)
-            file = open(item, "w")
-            file.write(text)
-            file.close()
+            write(text, item)
 
 
-def main() -> None:
+def compute_diff(orig: str, rev: str) -> str:
     """
-    Parse options and execute things.
+    Calculates a diff between orig and rev..
+
+    @param      orig  The original text.
+    @param      rev   The revised text.
+
+    @return     A diff between orig and rev.
+    """
+    diff = difflib.ndiff(orig, rev, linejunk=None, charjunk=None)
+    changed = {"+": [], "-": []}
+    indicator = {"+": [], "-": []}
+    context = {}
+    prev = None
+    section = None
+    para = 0
+    for line in diff:
+        # print("XX", line, end="", sep="")
+
+        context_start = re.search(r"^\+ (DISCUSS): *(.*)", line)
+        if context_start:
+            context["type"] = context_start.group(1)
+            context["section"] = section
+            context["para"] = para
+            context["inline"] = context_start.group(2) != ""
+            context["text"] = []
+            context["complete"] = False
+            # print(context)
+            if context["inline"]:
+                line = re.sub(r"" + context["type"] + ": *", "", line)
+            else:
+                continue
+
+        if "type" in context and not context["complete"]:
+            if re.search(r"^[\- ] ", line):
+                context["text"].append(line)
+                continue
+            context["complete"] = True
+
+        # track sections
+        potential_section = re.search(
+            r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
+            Table[ ]of[ ]Contents|Author('?s?'?)?[ ]Address(es)?|
+            [0-9]+(\.[0-9]+)*\.?)""",
+            line,
+            re.VERBOSE,
+        )
+        if potential_section:
+            section = potential_section.group(1)
+            if re.search(r"\d", section):
+                section = "Section " + re.sub(r"(.*)\.$", r"\1", section)
+            para = 0
+
+        # track paragraphs
+        if re.search(r"^[\- ] +$", line):
+            para += 1
+
+        kind = re.search(r"^([+? -]) ", line).group(1)
+
+        if kind == " ":
+            printed = False
+
+            if changed["+"] or changed["-"]:
+                if "complete" in context and context["complete"]:
+                    print(
+                        context["section"],
+                        ", paragraph ",
+                        context["para"],
+                        ", ",
+                        context["type"],
+                        ":",
+                        sep="",
+                    )
+                else:
+                    print(section, ", paragraph ", para, ":", sep="")
+
+            if "complete" in context and context["complete"]:
+                for context_line in context["text"]:
+                    if not re.match(r"^.. *$", context_line):
+                        quoted = re.sub(r"^..(.*)", r"> \1", context_line)
+                        print(quoted, end="")
+                if context["text"]:
+                    print()
+                context = {}
+
+            for kind in ["-", "+"]:
+                # if there are no changes, continue
+                if not changed[kind]:
+                    continue
+
+                for i in range(len(changed[kind])):
+                    # skip changes that add or remove empty lines
+                    if changed[kind][i] in ("+ \n", "- \n"):
+                        continue
+
+                    # print the changed line followed by an indicator line
+                    # (if present)
+                    print(changed[kind][i], end="")
+                    if indicator[kind][i] is not None:
+                        ind = indicator[kind][i].replace("?", " ", 1)
+                        print(ind, end="")
+                    printed = True
+
+                # clear the state
+                changed[kind] = []
+                indicator[kind] = []
+
+            prev = None
+
+            if printed:
+                # separate next diff with a newline
+                print()
+
+        elif kind in ("+", "-"):
+            # store the changed line
+            changed[kind].append(line)
+            # store an empty change indicator line
+            indicator[kind].append(None)
+            prev = kind
+
+        elif kind == "?":
+            # remove the empty indicator line
+            last = indicator[prev].pop()
+            # verify that the indicator line is in fact empty
+            if last is not None:
+                die("popped %s", last)
+
+            # store the actual indicator line
+            indicator[prev].append(line)
+            prev = None
+
+        else:
+            die("Unknown diff line: ", line)
+
+
+def review_items(items: list, datatracker: str) -> None:
+    """
+    Extract reviews from named items.
+
+    @param      items  The items to extract reviews from.
 
     @return     -
     """
+    logging.debug(items)
+    current_directory = os.getcwd()
+    with tempfile.TemporaryDirectory() as tmp:
+        logging.debug("tmp dir %s", tmp)
+        for item in items:
+            if not os.path.isfile(item):
+                logging.warning("%s does not exist, skipping", item)
+                continue
+
+            os.chdir(tmp)
+            orig_item = os.path.basename(item)
+            get_items([orig_item], datatracker)
+            orig = read(orig_item).splitlines(keepends=True)
+            os.chdir(current_directory)
+            rev = read(item).splitlines(keepends=True)
+            compute_diff(orig, rev)
+
+
+def parse_args() -> dict:
+    """
+    Parse arguments.
+
+    @return     Dict of parsed arguments.
+    """
     main_parser = argparse.ArgumentParser(
-        description=("Review tool for IETF documents.")
+        description="Review tool for IETF documents.",
+        epilog="""In order to operate offline and to speed up operation,
+            if you rsync the the various IETF documents onto your local disk,
+            set these environment variables to use your local caches as much as
+            possible: IETF_RFCS, IETF_IDS, IETF_CHARTERS""",
     )
 
     main_parser.add_argument(
@@ -279,7 +501,13 @@ def main() -> None:
         help="overwrite original item with stripped version",
     )
 
-    for parser in [parser_fetch, parser_strip]:
+    parser_review = subparsers.add_parser(
+        "review",
+        prog="review",
+        help="extract review from named items",
+    )
+
+    for parser in [parser_fetch, parser_strip, parser_review]:
         parser.add_argument(
             "items",
             metavar="item",
@@ -287,8 +515,19 @@ def main() -> None:
             help="names of items to " + parser.prog,
         )
 
-    args = main_parser.parse_args()
+    return main_parser.parse_args()
+
+
+def main() -> None:
+    """
+    Parse options and execute things.
+
+    @return     -
+    """
+    args = parse_args()
+
     args.datatracker = re.sub(r"/+$", "", args.datatracker)
+
     if args.verbose:
         logging.basicConfig(
             level=logging.DEBUG, format="%(levelname)s: %(message)s"
@@ -310,10 +549,7 @@ def main() -> None:
             os.chdir(agenda_directory)
 
         if args.save_agenda:
-            agenda_file = "agenda.json"
-            file = open(agenda_file, "w")
-            file.write(json.dumps(agenda, indent=4))
-            file.close()
+            write(json.dumps(agenda, indent=4), "agenda.json")
 
         logging.info(
             "Downloading ballot items from %s IESG agenda",
@@ -328,6 +564,9 @@ def main() -> None:
 
     elif args.tool == "strip":
         strip_items(args.items, args.in_place)
+
+    elif args.tool == "review":
+        review_items(args.items, args.datatracker)
 
 
 if __name__ == "__main__":
