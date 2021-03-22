@@ -188,7 +188,7 @@ def get_items(items: list, datatracker: str, strip: bool = True) -> None:
         logging.info("Getting %s", item)
         cache = None
         if item.startswith("draft-"):
-            url = "https://www.ietf.org/archive/id/" + file_name
+            url = "https://ietf.org/archive/id/" + file_name
             cache = os.getenv("IETF_IDS")
         elif item.startswith("rfc"):
             url = "https://rfc-editor.org/rfc/" + file_name
@@ -198,12 +198,13 @@ def get_items(items: list, datatracker: str, strip: bool = True) -> None:
                 r"(.*)(((-[0-9]+){2}).txt)$", r"\1/withmilestones\2", file_name
             )
             url = datatracker + "/doc/" + url_pattern
-            # TODO: the charters in rsync are wrapped differently, can't use
+            # TODO: the charters in rsync don't have milestones, can't use
             # cache = os.getenv("IETF_CHARTERS")
-            strip = False  # don't strip charters for review
+            strip = False
         elif item.startswith("conflict-review-"):
-            url = datatracker + "/doc/" + file_name
-            # cache = os.getenv("IETF_RFCS")
+            url = "https://ietf.org/cr/" + file_name
+            cache = os.getenv("IETF_CONFLICT_REVIEWS")
+            strip = False
         else:
             die("Unknown item type: ", item)
 
@@ -271,7 +272,6 @@ def review_item(orig: str, rev: str) -> dict:
     para = 0
 
     for line in difflib.ndiff(orig, rev, linejunk=None, charjunk=None):
-        print(line)
         context_start = re.search(
             r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", line
         )
@@ -306,7 +306,7 @@ def review_item(orig: str, rev: str) -> dict:
             if re.search(r"\d", section):
                 section = "Section " + re.sub(r"(.*)\.$", r"\1", section)
             else:
-                section = "\"" + section + "\""
+                section = '"' + section + '"'
             para = 0
 
         # track paragraphs
@@ -429,6 +429,14 @@ def review_items(items: list, datatracker: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         logging.debug("tmp dir %s", tmp)
         for item in items:
+            if os.path.isdir(item):
+                for dir_item in os.listdir(item):
+                    dir_item = os.path.join(item, dir_item)
+                    if os.path.isfile(dir_item) and dir_item.endswith(".txt"):
+                        items.append(dir_item)
+                logging.debug(items)
+                continue
+
             if not os.path.isfile(item):
                 logging.warning("%s does not exist, skipping", item)
                 continue
