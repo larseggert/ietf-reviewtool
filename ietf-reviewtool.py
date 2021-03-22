@@ -270,8 +270,11 @@ def review_item(orig: str, rev: str) -> dict:
     prev = None
     section = None
     para = 0
+    context_maybe_complete = False
+    had_nonnumbered_section = False
 
     for line in difflib.ndiff(orig, rev, linejunk=None, charjunk=None):
+        kind = re.search(r"^([+? -]) ", line).group(1)
         context_start = re.search(
             r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", line
         )
@@ -283,60 +286,88 @@ def review_item(orig: str, rev: str) -> dict:
             context["text"] = []
             context["complete"] = False
             if context["inline"]:
-                line = re.sub(r"" + context["category"] + ": *", "", line)
+                line = "+ " + context_start.group(2) + "\n"
             else:
                 continue
 
         if "category" in context and not context["complete"]:
-            if re.search(r"^[\- ] ", line):
+            if kind in ["-", " "]:
                 context["text"].append(line)
-                continue
-            context["complete"] = True
+                if context_maybe_complete:
+                    context["complete"] = True
+                    context_maybe_complete = False
+            elif kind == "?":
+                context_maybe_complete = False
+            elif kind in ["+", " "]:
+                context_maybe_complete = True
 
         # track sections
         potential_section = re.search(
             r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
             Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
-            [0-9]+(?:\.[0-9]+)*\.?)""",
+            [0-9]+(?:\.[0-9]+)*\.?)[ ]""",
             line,
             re.VERBOSE,
         )
         if potential_section:
-            section = potential_section.group(1)
-            if re.search(r"\d", section):
-                section = "Section " + re.sub(r"(.*)\.$", r"\1", section)
+            potential_section = potential_section.group(1)
+            if re.match(r"\d", potential_section):
+                if had_nonnumbered_section:
+                    section = "Section " + re.sub(
+                        r"(.*)\.$", r"\1", potential_section
+                    )
             else:
-                section = '"' + section + '"'
+                had_nonnumbered_section = True
+                section = '"' + potential_section + '"'
             para = 0
 
         # track paragraphs
         if re.search(r"^[\- ] +$", line):
             para += 1
 
-        kind = re.search(r"^([+? -]) ", line).group(1)
-
         if kind == " ":
-            complete = False
+            need_newline = False
             category = "nit"
+
+            # remove changes that only add or remove empty lines
+            for prefix in ["-", "+"]:
+                i = 0
+                while i < len(changed[prefix]):
+                    if changed[prefix][i] in ("+ \n", "- \n"):
+                        changed[prefix].pop(i)
+                        indicator[prefix].pop(i)
+                    else:
+                        i += 1
+
             if changed["+"] or changed["-"]:
                 if "complete" in context and context["complete"]:
                     category = context["category"]
-                    review[category].append(
-                        f"{context['section']}, "
-                        f"paragraph {context['para']}, "
-                        f"{category}:\n"
-                    )
+                    if context["section"]:
+                        review[category].append(
+                            f"{context['section']}, "
+                            f"paragraph {context['para']}, "
+                            f"{category}:\n"
+                        )
+                    else:
+                        review[category].append(
+                            f"Paragraph {context['para']}, " f"{category}:\n"
+                        )
 
                     for context_line in context["text"]:
                         if not re.match(r"^.. *$", context_line):
                             quoted = re.sub(r"^..(.*)", r"> \1", context_line)
                             review[category].append(quoted)
-                    if context["text"]:
+                    if not context["inline"]:
                         review[category].append("\n")
                 else:
-                    review[category].append(
-                        f"{section}, paragraph {para}, nit:\n"
-                    )
+                    if section:
+                        review[category].append(
+                            f"{section}, paragraph {para}, {category}:\n"
+                        )
+                    else:
+                        review[category].append(
+                            f"Paragraph {para}, {category}:\n"
+                        )
 
             for prefix in ["-", "+"]:
                 # if there are no changes, continue
@@ -344,13 +375,9 @@ def review_item(orig: str, rev: str) -> dict:
                     continue
 
                 for i in range(len(changed[prefix])):
-                    # skip changes that add or remove empty lines
-                    if changed[prefix][i] in ("+ \n", "- \n"):
-                        continue
-
                     # add the changed line followed by an indicator line
                     # (if present)
-                    if context:
+                    if "complete" in context and context["complete"]:
                         stripped = re.sub(
                             r"^\+ (.*)",
                             r"\1",
@@ -358,27 +385,22 @@ def review_item(orig: str, rev: str) -> dict:
                         )
                         review[category].append(stripped)
                     else:
-                        stripped = re.sub(
-                            r"^(\+ )(?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)?( *.*)",
-                            r"\1\3",
-                            changed[prefix][i],
-                        )
-                        review[category].append(
-                            stripped if stripped else changed[prefix][i]
-                        )
+                        review[category].append(changed[prefix][i])
                     if indicator[prefix][i] is not None:
                         ind = indicator[prefix][i].replace("?", " ", 1)
                         review[category].append(ind)
-                    complete = True
+                    need_newline = True
 
                 # clear the state
                 changed[prefix] = []
                 indicator[prefix] = []
 
-            context = {}
+            if "complete" in context and context["complete"]:
+                context = {}
+                context_maybe_complete = False
             prev = None
 
-            if complete:
+            if need_newline:
                 # separate next diff with a newline
                 review[category].append("\n")
 
