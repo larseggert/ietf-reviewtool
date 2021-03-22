@@ -201,8 +201,11 @@ def get_items(items: list, datatracker: str, strip: bool = True) -> None:
             # TODO: the charters in rsync are wrapped differently, can't use
             # cache = os.getenv("IETF_CHARTERS")
             strip = False  # don't strip charters for review
+        elif item.startswith("conflict-review-"):
+            url = datatracker + "/doc/" + file_name
+            # cache = os.getenv("IETF_RFCS")
         else:
-            die("Unknown item type: %s", item)
+            die("Unknown item type: ", item)
 
         text = None
         if cache is not None:
@@ -268,10 +271,11 @@ def review_item(orig: str, rev: str) -> dict:
     para = 0
 
     for line in difflib.ndiff(orig, rev, linejunk=None, charjunk=None):
+        print(line)
         context_start = re.search(
-            r"^\+ (D(?:ISCUSS)?|C(?:OMMENT)?|N(?:IT))?: *(.*)", line
+            r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", line
         )
-        if context_start:
+        if context_start and context_start.group(1):
             context["category"] = context_start.group(1).lower()
             context["section"] = section
             context["para"] = para
@@ -301,6 +305,8 @@ def review_item(orig: str, rev: str) -> dict:
             section = potential_section.group(1)
             if re.search(r"\d", section):
                 section = "Section " + re.sub(r"(.*)\.$", r"\1", section)
+            else:
+                section = "\"" + section + "\""
             para = 0
 
         # track paragraphs
@@ -327,7 +333,6 @@ def review_item(orig: str, rev: str) -> dict:
                             review[category].append(quoted)
                     if context["text"]:
                         review[category].append("\n")
-                    context = {}
                 else:
                     review[category].append(
                         f"{section}, paragraph {para}, nit:\n"
@@ -345,7 +350,22 @@ def review_item(orig: str, rev: str) -> dict:
 
                     # add the changed line followed by an indicator line
                     # (if present)
-                    review[category].append(changed[prefix][i])
+                    if context:
+                        stripped = re.sub(
+                            r"^\+ (.*)",
+                            r"\1",
+                            changed[prefix][i],
+                        )
+                        review[category].append(stripped)
+                    else:
+                        stripped = re.sub(
+                            r"^(\+ )(?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)?( *.*)",
+                            r"\1\3",
+                            changed[prefix][i],
+                        )
+                        review[category].append(
+                            stripped if stripped else changed[prefix][i]
+                        )
                     if indicator[prefix][i] is not None:
                         ind = indicator[prefix][i].replace("?", " ", 1)
                         review[category].append(ind)
@@ -355,6 +375,7 @@ def review_item(orig: str, rev: str) -> dict:
                 changed[prefix] = []
                 indicator[prefix] = []
 
+            context = {}
             prev = None
 
             if complete:
@@ -387,9 +408,12 @@ def review_item(orig: str, rev: str) -> dict:
 
 def fmt_review(review: dict) -> None:
     for category in ["discuss", "comment", "nit"]:
-        print(category.upper())
-        for line in review[category]:
-            print(line, end="")
+        if review[category]:
+            print("-" * 79)
+            print(category.upper())
+            print("-" * 79)
+            for line in review[category]:
+                print(line, end="")
 
 
 def review_items(items: list, datatracker: str) -> None:
