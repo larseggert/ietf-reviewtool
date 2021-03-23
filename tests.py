@@ -5,7 +5,6 @@ Tests for ietf-reviewtool.py.
 import importlib
 import re
 import unittest
-import pprint
 
 irt = importlib.import_module("ietf-reviewtool")
 
@@ -21,12 +20,24 @@ class TestReviewItem(unittest.TestCase):
 
     two_lines = ["This is a first sentence.\n", "This is a second sentence.\n"]
 
+    four_lines = [
+        "This is a first sentence.\n",
+        "This is a second sentence.\n",
+        "This is a third sentence.\n",
+        "This is a fourth sentence.\n",
+    ]
+
     def compute_and_verify_result(self, orig, review, expected_result):
         """Compute and verify the review results."""
         result = irt.review_item(orig, review)
-        # print(result)
-        # print(irt.fmt_review(result))
+        if result != expected_result:
+            print(review)
+            print(result)
+            print(irt.fmt_review(result))
         self.assertEqual(result, expected_result)
+
+    def make_inline_change(self, text: str) -> str:
+        return re.sub(r"sentence", r"word", text)
 
     def test_all_empty(self):
         """Empty document, empty review."""
@@ -39,7 +50,7 @@ class TestReviewItem(unittest.TestCase):
     def test_single_line_inline_nits(self):
         """Single line, only inline nits."""
         review = self.single_line.copy()
-        review[0] = re.sub(r"sentence", r"word", review[0])
+        review[0] = self.make_inline_change(review[0])
         expected = self.empty_review | {
             "nit": [
                 "Paragraph 1, nit:\n",
@@ -55,7 +66,7 @@ class TestReviewItem(unittest.TestCase):
     def test_two_lines_inline_nits(self):
         """Two lines, only inline nits."""
         review = self.two_lines.copy()
-        review[0] = re.sub(r"sentence", r"word", review[0])
+        review[0] = self.make_inline_change(review[0])
         expected = self.empty_review | {
             "nit": [
                 "Paragraph 0, nit:\n",
@@ -99,6 +110,42 @@ class TestReviewItem(unittest.TestCase):
             ],
         }
         self.compute_and_verify_result(self.two_lines, review, expected)
+
+    def test_two_lines_discuss(self):
+        """Two lines with a DISCUSS around them."""
+        cases = {}
+        for pos in range(1, 2):
+            review = self.two_lines.copy()
+            review[pos] = self.make_inline_change(review[pos])
+            review.insert(0, "DISCUSS:\n")
+            review.append("First line of DISCUSS.\n")
+            review.append("Second line of DISCUSS.\n")
+            expected = self.empty_review | {
+                "discuss": [
+                    "Paragraph 0, discuss:\n",
+                    "> This is a first sentence.\n",
+                    "> This is a second sentence.\n",
+                    "\n",
+                    "First line of DISCUSS.\n",
+                    "Second line of DISCUSS.\n",
+                    "\n",
+                ],
+                "nit": [
+                    "Paragraph 0, nit:\n",
+                    "- This is a first sentence.\n",
+                    "                  ^^^^^^^^\n",
+                    "+ This is a first word.\n",
+                    "                  ^^^^\n",
+                    "\n",
+                ],
+            }
+            cases[pos] = (review, expected)
+
+        for case in cases:
+            with self.subTest():
+                self.compute_and_verify_result(
+                    self.two_lines, cases[case][0], cases[case][1]
+                )
 
 
 if __name__ == "__main__":
