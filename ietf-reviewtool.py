@@ -254,7 +254,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
             write(text, item)
 
 
-def review_item(orig: str, rev: str) -> dict:
+def review_item(orig: list, rev: list) -> dict:
     """
     Calculates a diff between orig and rev..
 
@@ -273,7 +273,12 @@ def review_item(orig: str, rev: str) -> dict:
     context_maybe_complete = False
     had_nonnumbered_section = False
 
+    # difflib can't deal with single lines it seems
+    if len(orig) == 1:
+        orig.append("\n")
+
     for line in difflib.ndiff(orig, rev, linejunk=None, charjunk=None):
+        # print(line, end="")
         kind = re.search(r"^([+? -]) ", line).group(1)
         context_start = re.search(
             r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", line
@@ -373,6 +378,9 @@ def review_item(orig: str, rev: str) -> dict:
                 # if there are no changes, continue
                 if not changed[prefix]:
                     continue
+
+                if "inline" in context and context["inline"]:
+                    review[category].append("\n")
 
                 for i in range(len(changed[prefix])):
                     # add the changed line followed by an indicator line
