@@ -114,7 +114,7 @@ class TestReviewItem(unittest.TestCase):
             self.empty_review
             | {
                 "discuss": [
-                    "Paragraph 0, discuss:\n",  # FIXME: 0 should be 1
+                    "Paragraph 1, discuss:\n",
                     "A line of DISCUSS.\n",
                     "\n",
                     "Paragraph 1, discuss:\n",
@@ -192,7 +192,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
                 "nit": [
-                    "Paragraph 0, nit:\n",
+                    "Paragraph 1, nit:\n",
                     "- This is a first sentence.\n",
                     "-                 ^^^^^^^^\n",
                     "+ This is a first word.\n",
@@ -212,7 +212,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
                 "nit": [
-                    "Paragraph 0, nit:\n",
+                    "Paragraph 1, nit:\n",
                     "- This is a first sentence.\n",
                     "-                 --------\n",
                     "+ This is a first .\n",

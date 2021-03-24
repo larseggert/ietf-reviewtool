@@ -255,78 +255,86 @@ def strip_items(items: list, in_place: bool = False) -> None:
             write(text, item)
 
 
-def section_and_paragraph(nxt: str, cur: str, sec_para: tuple) -> tuple:
+def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
     """
-    Return a tuple consisting of the current paragraph number and section title,
+    Return a list consisting of the current paragraph number and section title,
     based on the next and current lines of text and the current paragraph number
-    and section title tuple.
+    and section title list.
 
     @param      nxt       The next line in the diff.
     @param      cur       The current line in the diff
-    @param      sec_para  The current (paragraph number, section name) tuple.
+    @param      para_sec  The current (paragraph number, section name) list.
 
-    @return     An updated (paragraph number, section name) tuple.
+    @return     An updated (paragraph number, section name) list.
     """
-    para = sec_para[0] if 0 in sec_para else 0
-    sec = sec_para[1] if 1 in sec_para else None
+    [para, sec, had_nn] = (
+        para_sec if para_sec is not None else [1, None, False]
+    )
 
     # track paragraphs
-    if nxt is None or re.search(r"^[\- ] +$", nxt):
-        # track sections
-        sec = re.search(
-            r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
-            Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
-            [0-9]+(?:\.[0-9]+)*\.?)[ ]""",
-            cur,
-            re.VERBOSE,
-        )
-        if sec:
-            sec = sec.group(1)
-            para = 0
-            sec = (
-                "Section " + re.sub(r"(.*)\.$", r"\1", sec)
-                if re.match(r"\d", sec)
-                else f'"{sec}"'
-            )
+    if re.search(r"^[\- ] +$", cur):
+        para += 1
+
+    # track sections
+    pot_sec = re.search(
+        r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
+        Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
+        [0-9]+(?:\.[0-9]+)*\.?)[ ]""",
+        cur,
+        re.VERBOSE,
+    )
+    if pot_sec and re.search(r"^[\- ] +$", nxt):
+        pot_sec = pot_sec.group(1)
+        if re.match(r"\d", pot_sec):
+            if had_nn:
+                para = 1
+                sec = (
+                    "Section " + re.sub(r"(.*)\.$", r"\1", pot_sec)
+                    if re.match(r"\d", pot_sec)
+                    else f'"{pot_sec}"'
+                )
         else:
-            para += 1
-    return (para, sec)
+            para = 1
+            had_nn = True
+            sec = '"' + pot_sec + '"'
+
+    return [para, sec, had_nn]
 
 
-def fmt_section_and_paragraph(sec_para: tuple, cat: str) -> str:
+def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
     """
     Return a formatted prefix line indicating the current section name,
     paragraph number, and category.
 
-    @param      sec_para  The current (paragraph number, section name) tuple.
+    @param      para_sec  The current (paragraph number, section name) list.
     @param      cat       The category to indicate.
 
     @return     A formatted prefix line.
     """
-    line = f"{sec_para[1]}, p" if sec_para[1] else "P"
-    line += f"aragraph {sec_para[0]}, {cat}:\n"
+    line = f"{para_sec[1]}, p" if para_sec[1] else "P"
+    line += f"aragraph {para_sec[0]}, {cat}:\n"
     return line
 
 
-def fmt_nit(changed: list, indicator: list, sec_para: tuple) -> list:
+def fmt_nit(changed: list, indicator: list, para_sec: list) -> list:
     """
     Format a nit.
 
     @param      changed    Changed lines.
     @param      indicator  Indicator lines.
-    @param      sec_para   The current (paragraph number, section name) tuple.
+    @param      para_sec   The current (paragraph number, section name) list.
 
     @return     The formatted nit.
     """
-    result = [fmt_section_and_paragraph(sec_para, "nit")]
+    result = [fmt_section_and_paragraph(para_sec, "nit")]
     for prefix in ["-", "+"]:
         for tup in zip(changed[prefix], indicator[prefix]):
             # add the changed line followed by an indicator line
             result.append(tup[0])
             if tup[1]:
                 result.append(tup[1].replace("?", prefix, 1))
-        indicator[prefix] = []
-        changed[prefix] = []
+        indicator[prefix].clear()
+        changed[prefix].clear()
     result.append("\n")
     return result
 
@@ -341,15 +349,17 @@ def gather_nits(diff: list) -> list:
     """
     changed = {"+": [], "-": []}
     indicator = {"+": [], "-": []}
-    sec_para = ()
+    para_sec = None
     prev = None
     result = []
 
     for num, cur in enumerate(diff):
+        if cur == "+ \n":
+            continue
+
         kind = cur[0]
         nxt = diff[num + 1] if num < len(diff) - 1 else None
         nxt_kind = nxt[0] if nxt else None
-        sec_para = section_and_paragraph(nxt, cur, sec_para)
 
         if kind in ["+", "-"] and nxt_kind == "?":
             changed[kind].append(cur)
@@ -361,13 +371,20 @@ def gather_nits(diff: list) -> list:
             changed[kind].append(cur)
             indicator[kind].append(None)
 
+        elif kind in ["-"] and nxt_kind == "+":
+            changed[kind].append(cur)
+            indicator[kind].append(None)
+
         elif changed["-"] or changed["+"]:
-            result.extend(fmt_nit(changed, indicator, sec_para))
+            result.extend(fmt_nit(changed, indicator, para_sec))
+
+        if nxt:
+            para_sec = section_and_paragraph(nxt, cur, para_sec)
 
         prev = kind
 
     if changed["-"] or changed["+"]:
-        result.extend(fmt_nit(changed, indicator, sec_para))
+        result.extend(fmt_nit(changed, indicator, para_sec))
 
     return result
 
@@ -417,14 +434,24 @@ def strip_nits_from_diff(diff: list) -> list:
     return result
 
 
-def fmt_comment(item: dict, sec_para: tuple) -> list:
-    result = [fmt_section_and_paragraph(sec_para, item["cat"])]
+def fmt_comment(item: dict, para_sec: list) -> list:
+    """
+    Format a comment.
+
+    @param      item      The comment item dict.
+    @param      para_sec  The current (paragraph number, section name) list.
+
+    @return     The formatted comment.
+    """
+    result = [fmt_section_and_paragraph(para_sec, item["cat"])]
     result.extend([re.sub(r".(.*)", r">\1", x) for x in item["ctx"]])
     if item["ctx"]:
         result.append("\n")
     result.extend([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
     if item["txt"]:
         result.append("\n")
+    if item["ctx"]:
+        para_sec[0] -= 1  # don't count this as a paragraph
     item.clear()
     return result
 
@@ -438,19 +465,18 @@ def gather_comments(diff: list) -> dict:
     @return     A review dict.
     """
     result = {"discuss": [], "comment": [], "nit": []}
-    sec_para = ()
+    para_sec = None
     item = {}
 
     for num, cur in enumerate(diff):
         nxt = diff[num + 1] if num < len(diff) - 1 else None
-        sec_para = section_and_paragraph(nxt, cur, sec_para)
 
         start = re.search(
             r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", cur
         )
         if start and start.group(1):
             if "cat" in item:
-                result[item["cat"]].extend(fmt_comment(item, sec_para))
+                result[item["cat"]].extend(fmt_comment(item, para_sec))
             item["cat"] = start.group(1).lower()
             item["ctx"] = []
             item["ctx_ok"] = start.group(2) != ""
@@ -476,7 +502,9 @@ def gather_comments(diff: list) -> dict:
                     item["txt"].append(cur)
 
             if item["txt_ok"] or nxt is None:
-                result[item["cat"]].extend(fmt_comment(item, sec_para))
+                result[item["cat"]].extend(fmt_comment(item, para_sec))
+
+        para_sec = section_and_paragraph(nxt, cur, para_sec)
 
     return result
 
@@ -494,10 +522,16 @@ def review_item(orig: list, rev: list) -> dict:
     # difflib can't deal with single lines it seems
     if len(orig) == 1:
         orig.append("\n")
+    if len(rev) == 1:
+        rev.append("\n")
 
     diff = list(difflib.ndiff(orig, rev, linejunk=None, charjunk=None))
+    # print("diff ", diff)
+
     nits = gather_nits(diff)
+    # print("nits ", nits)
     diff = strip_nits_from_diff(diff)
+    # print("stripped ", diff)
     review = gather_comments(diff)
     review["nit"].extend(nits)
     return review
