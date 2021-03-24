@@ -279,7 +279,7 @@ def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
     pot_sec = re.search(
         r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
         Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
-        [0-9]+(?:\.[0-9]+)*\.?)[ ]""",
+        [0-9]+(?:\.[0-9]+)*\.?)""",
         cur,
         re.VERBOSE,
     )
@@ -354,7 +354,7 @@ def gather_nits(diff: list) -> list:
     result = []
 
     for num, cur in enumerate(diff):
-        if cur == "+ \n":
+        if cur in ["+ \n", "- \n"]:
             continue
 
         kind = cur[0]
