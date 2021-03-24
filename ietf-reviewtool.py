@@ -255,90 +255,230 @@ def strip_items(items: list, in_place: bool = False) -> None:
             write(text, item)
 
 
-def append_to_review(review: dict, addition: dict) -> None:
-    for key in review:
-        if key in addition:
-            review[key] += addition[key]
-            del addition[key]
-    for key in addition:
-        review[key] = addition[key]
+def section_and_paragraph(nxt: str, cur: str, sec_para: tuple) -> tuple:
+    """
+    Return a tuple consisting of the current paragraph number and section title,
+    based on the next and current lines of text and the current paragraph number
+    and section title tuple.
 
+    @param      nxt       The next line in the diff.
+    @param      cur       The current line in the diff
+    @param      sec_para  The current (paragraph number, section name) tuple.
 
-def add_review_block(
-    changed: dict,
-    indicator: dict,
-    context: dict,
-    section: str,
-    para: int,
-) -> dict:
-    review = {"discuss": [], "comment": [], "nit": []}
-    need_newline = False
-    category = "nit"
+    @return     An updated (paragraph number, section name) tuple.
+    """
+    para = sec_para[0] if 0 in sec_para else 0
+    sec = sec_para[1] if 1 in sec_para else None
 
-    if changed["+"] or changed["-"]:
-        if "complete" in context and context["complete"]:
-            category = context["category"]
-            if context["section"]:
-                review[category].append(
-                    f"{context['section']}, "
-                    f"paragraph {context['para']}, "
-                    f"{category}:\n"
-                )
-            else:
-                review[category].append(
-                    f"Paragraph {context['para']}, " f"{category}:\n"
-                )
-
-            for context_line in context["text"]:
-                if not re.match(r"^.. *$", context_line):
-                    quoted = re.sub(r"^..(.*)", r"> \1", context_line)
-                    review[category].append(quoted)
-            if not context["inline"]:
-                review[category].append("\n")
+    # track paragraphs
+    if nxt is None or re.search(r"^[\- ] +$", nxt):
+        # track sections
+        sec = re.search(
+            r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
+            Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
+            [0-9]+(?:\.[0-9]+)*\.?)[ ]""",
+            cur,
+            re.VERBOSE,
+        )
+        if sec:
+            sec = sec.group(1)
+            para = 0
+            sec = (
+                "Section " + re.sub(r"(.*)\.$", r"\1", sec)
+                if re.match(r"\d", sec)
+                else f'"{sec}"'
+            )
         else:
-            if section:
-                review[category].append(
-                    f"{section}, paragraph {para}, {category}:\n"
-                )
-            else:
-                review[category].append(f"Paragraph {para}, {category}:\n")
+            para += 1
+    return (para, sec)
 
+
+def fmt_section_and_paragraph(sec_para: tuple, cat: str) -> str:
+    """
+    Return a formatted prefix line indicating the current section name,
+    paragraph number, and category.
+
+    @param      sec_para  The current (paragraph number, section name) tuple.
+    @param      cat       The category to indicate.
+
+    @return     A formatted prefix line.
+    """
+    line = f"{sec_para[1]}, p" if sec_para[1] else "P"
+    line += f"aragraph {sec_para[0]}, {cat}:\n"
+    return line
+
+
+def fmt_nit(changed: list, indicator: list, sec_para: tuple) -> list:
+    """
+    Format a nit.
+
+    @param      changed    Changed lines.
+    @param      indicator  Indicator lines.
+    @param      sec_para   The current (paragraph number, section name) tuple.
+
+    @return     The formatted nit.
+    """
+    result = [fmt_section_and_paragraph(sec_para, "nit")]
     for prefix in ["-", "+"]:
-        # if there are no changes, continue
-        if not changed[prefix]:
+        for tup in zip(changed[prefix], indicator[prefix]):
+            # add the changed line followed by an indicator line
+            result.append(tup[0])
+            if tup[1]:
+                result.append(tup[1].replace("?", prefix, 1))
+        indicator[prefix] = []
+        changed[prefix] = []
+    result.append("\n")
+    return result
+
+
+def gather_nits(diff: list) -> list:
+    """
+    Return a list of prefixed nits from the current diff.
+
+    @param      diff  The diff to extract nits from.
+
+    @return     A list of prefixed nits.
+    """
+    changed = {"+": [], "-": []}
+    indicator = {"+": [], "-": []}
+    sec_para = ()
+    prev = None
+    result = []
+
+    for num, cur in enumerate(diff):
+        kind = cur[0]
+        nxt = diff[num + 1] if num < len(diff) - 1 else None
+        nxt_kind = nxt[0] if nxt else None
+        sec_para = section_and_paragraph(nxt, cur, sec_para)
+
+        if kind in ["+", "-"] and nxt_kind == "?":
+            changed[kind].append(cur)
+
+        elif kind == "?" and prev in ["+", "-"]:
+            indicator[prev].append(cur)
+
+        elif kind in ["+", "-"] and prev == "?":
+            changed[kind].append(cur)
+            indicator[kind].append(None)
+
+        elif changed["-"] or changed["+"]:
+            result.extend(fmt_nit(changed, indicator, sec_para))
+
+        prev = kind
+
+    if changed["-"] or changed["+"]:
+        result.extend(fmt_nit(changed, indicator, sec_para))
+
+    return result
+
+
+def strip_nits_from_diff(diff: list) -> list:
+    """
+    Return a version of the passed diff with all lines related to nits removed.
+
+    @param      diff  The diff to strip nits from.
+
+    @return     A diff with all nits removed.
+    """
+    prev = None
+    continue_again = False
+    result = []
+
+    for num, cur in enumerate(diff):
+        if continue_again:
+            continue_again = False
             continue
 
-        if (
-            (changed["+"] or changed["-"])
-            and "inline" in context
-            and context["inline"]
-        ):
-            review[category].append("\n")
+        if cur == "+ \n":
+            continue
 
-        for i in range(len(changed[prefix])):
-            # add the changed line followed by an indicator line (if present)
-            if "complete" in context and context["complete"]:
-                stripped = re.sub(
-                    r"^\+ (.*)",
-                    r"\1",
-                    changed[prefix][i],
-                )
-                review[category].append(stripped)
+        kind = cur[0]
+        nxt = diff[num + 1] if num < len(diff) - 1 else None
+        nxt_kind = nxt[0] if nxt else None
+
+        if kind == "+":
+            if nxt_kind == "?":
+                continue_again = True
+                prev = kind
+                continue
+            if prev == "?":
+                prev = kind
+                continue
+
+        if kind == "?" and prev in ["+", "-"]:
+            prev = kind
+            continue
+
+        if kind == "-":
+            cur = re.sub(r".(.*)", r" \1", cur)
+
+        result.append(cur)
+        prev = kind
+    return result
+
+
+def fmt_comment(item: dict, sec_para: tuple) -> list:
+    result = [fmt_section_and_paragraph(sec_para, item["cat"])]
+    result.extend([re.sub(r".(.*)", r">\1", x) for x in item["ctx"]])
+    if item["ctx"]:
+        result.append("\n")
+    result.extend([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
+    if item["txt"]:
+        result.append("\n")
+    item.clear()
+    return result
+
+
+def gather_comments(diff: list) -> dict:
+    """
+    Return a dict that contains lists of all comments of all categories.
+
+    @param      diff  A diff with nits removed (by strip_nits_from_diff).
+
+    @return     A review dict.
+    """
+    result = {"discuss": [], "comment": [], "nit": []}
+    sec_para = ()
+    item = {}
+
+    for num, cur in enumerate(diff):
+        nxt = diff[num + 1] if num < len(diff) - 1 else None
+        sec_para = section_and_paragraph(nxt, cur, sec_para)
+
+        start = re.search(
+            r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", cur
+        )
+        if start and start.group(1):
+            if "cat" in item:
+                result[item["cat"]].extend(fmt_comment(item, sec_para))
+            item["cat"] = start.group(1).lower()
+            item["ctx"] = []
+            item["ctx_ok"] = start.group(2) != ""
+            item["txt"] = []
+            item["txt_ok"] = False
+            if item["ctx_ok"]:
+                cur = "+ " + start.group(2) + "\n"
             else:
-                review[category].append(changed[prefix][i])
-            if indicator[prefix][i] is not None:
-                ind = indicator[prefix][i].replace("?", " ", 1)
-                review[category].append(ind)
-            need_newline = True
+                continue
 
-        # clear the state
-        changed[prefix] = []
-        indicator[prefix] = []
+        if "txt_ok" in item:
+            kind = cur[0]
+            if item["ctx_ok"] is False:
+                if kind != " ":
+                    item["txt"].append(cur)
+                    item["ctx_ok"] = True
+                else:
+                    item["ctx"].append(cur)
+            else:
+                if kind != "+":
+                    item["txt_ok"] = True
+                else:
+                    item["txt"].append(cur)
 
-    if need_newline:
-        # separate next diff with a newline
-        review[category].append("\n")
-    return review
+            if item["txt_ok"] or nxt is None:
+                result[item["cat"]].extend(fmt_comment(item, sec_para))
+
+    return result
 
 
 def review_item(orig: list, rev: list) -> dict:
@@ -350,124 +490,24 @@ def review_item(orig: list, rev: list) -> dict:
 
     @return     A diff between orig and rev.
     """
-    review = {"discuss": [], "comment": [], "nit": []}
-    changed = {"+": [], "-": []}
-    indicator = {"+": [], "-": []}
-    context = {}
-    prev = None
-    section = None
-    para = 0
-    context_maybe_complete = False
-    had_nonnumbered_section = False
 
     # difflib can't deal with single lines it seems
     if len(orig) == 1:
         orig.append("\n")
 
-    for line in difflib.ndiff(orig, rev, linejunk=None, charjunk=None):
-
-        # skip changes that only add or remove empty lines
-        if line in ("+ \n", "- \n"):
-            continue
-
-        kind = re.search(r"^([+? -]) ", line).group(1)
-        context_start = re.search(
-            r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", line
-        )
-        if context_start and context_start.group(1):
-            context["category"] = context_start.group(1).lower()
-            context["section"] = section
-            context["para"] = para
-            context["inline"] = context_start.group(2) != ""
-            context["text"] = []
-            context["complete"] = False
-            if context["inline"]:
-                line = "+ " + context_start.group(2) + "\n"
-            else:
-                continue
-
-        if "category" in context and not context["complete"]:
-            if kind in ["-", " "]:
-                context["text"].append(line)
-                if context_maybe_complete:
-                    context["complete"] = True
-                    context_maybe_complete = False
-            elif kind == "?":
-                context_maybe_complete = False
-            elif kind in ["+", " "]:
-                context_maybe_complete = True
-
-        # track sections
-        potential_section = re.search(
-            r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
-            Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
-            [0-9]+(?:\.[0-9]+)*\.?)[ ]""",
-            line,
-            re.VERBOSE,
-        )
-        if potential_section:
-            potential_section = potential_section.group(1)
-            if re.match(r"\d", potential_section):
-                if had_nonnumbered_section:
-                    section = "Section " + re.sub(
-                        r"(.*)\.$", r"\1", potential_section
-                    )
-                    para = 0
-            else:
-                had_nonnumbered_section = True
-                section = '"' + potential_section + '"'
-                para = 0
-
-        # track paragraphs
-        if re.search(r"^[\- ] +$", line):
-            para += 1
-
-        if kind == " ":
-            append_to_review(
-                review,
-                add_review_block(changed, indicator, context, section, para),
-            )
-            if "complete" in context and context["complete"]:
-                context = {}
-                context_maybe_complete = False
-            prev = None
-
-        elif kind in ("+", "-"):
-            # store the changed line
-            changed[kind].append(line)
-            # store an empty change indicator line
-            indicator[kind].append(None)
-            prev = kind
-
-        elif kind == "?":
-            # remove the empty indicator line
-            last = indicator[prev].pop()
-            # verify that the indicator line is in fact empty
-            if last is not None:
-                die("popped %s", last)
-
-            # store the actual indicator line
-            indicator[prev].append(line)
-            prev = None
-
-        else:
-            die("Unknown diff line: ", line)
-
-    if "complete" in context and context["complete"] is False:
-        context["complete"] = True
-        append_to_review(
-            review,
-            add_review_block(changed, indicator, context, section, para),
-        )
-
+    diff = list(difflib.ndiff(orig, rev, linejunk=None, charjunk=None))
+    nits = gather_nits(diff)
+    diff = strip_nits_from_diff(diff)
+    review = gather_comments(diff)
+    review["nit"].extend(nits)
     return review
 
 
 def fmt_review(review: dict, ruler: int = 79) -> None:
     """Format a review dict for datatracker submission."""
     boilerplate = {
-        "discuss": "",
-        "comment": "",
+        "discuss": None,
+        "comment": None,
         "nit": (
             "All comments below are very minor change suggestions "
             "that you may choose to incorporate in some way (or ignore), "
@@ -481,7 +521,8 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
             print("-" * ruler)
             print(category.upper())
             print("-" * ruler)
-            print(textwrap.fill(boilerplate[category], width=ruler), "\n")
+            if boilerplate[category]:
+                print(textwrap.fill(boilerplate[category], width=ruler), "\n")
 
             for line in review[category]:
                 print(line, end="")

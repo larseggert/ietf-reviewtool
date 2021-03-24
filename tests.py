@@ -9,10 +9,17 @@ import unittest
 irt = importlib.import_module("ietf-reviewtool")
 
 
+def munge(text: str, repl=r"word") -> str:
+    """Replace "sentence" with repl."""
+    return re.sub(r"sentence", repl, text)
+
+
 class TestReviewItem(unittest.TestCase):
     """
     Tests for review_item().
     """
+
+    maxDiff = None
 
     empty_review = {"discuss": [], "comment": [], "nit": []}
 
@@ -36,9 +43,6 @@ class TestReviewItem(unittest.TestCase):
             print(irt.fmt_review(result))
         self.assertEqual(result, expected_result)
 
-    def make_inline_change(self, text: str) -> str:
-        return re.sub(r"sentence", r"word", text)
-
     def test_all_empty(self):
         """Empty document, empty review."""
         self.compute_and_verify_result("", "", self.empty_review)
@@ -50,14 +54,14 @@ class TestReviewItem(unittest.TestCase):
     def test_single_line_inline_nits(self):
         """Single line, only inline nits."""
         review = self.single_line.copy()
-        review[0] = self.make_inline_change(review[0])
+        review[0] = munge(review[0])
         expected = self.empty_review | {
             "nit": [
                 "Paragraph 1, nit:\n",
                 "- This is a single sentence.\n",
-                "                   ^^^^^^^^\n",
+                "-                  ^^^^^^^^\n",
                 "+ This is a single word.\n",
-                "                   ^^^^\n",
+                "+                  ^^^^\n",
                 "\n",
             ],
         }
@@ -65,64 +69,121 @@ class TestReviewItem(unittest.TestCase):
 
     def test_two_lines_inline_nits(self):
         """Two lines, only inline nits."""
-        review = self.two_lines.copy()
-        review[0] = self.make_inline_change(review[0])
-        expected = self.empty_review | {
-            "nit": [
-                "Paragraph 0, nit:\n",
-                "- This is a first sentence.\n",
-                "                  ^^^^^^^^\n",
-                "+ This is a first word.\n",
-                "                  ^^^^\n",
-                "\n",
-            ],
-        }
-        self.compute_and_verify_result(self.two_lines, review, expected)
+        expected = [
+            self.empty_review
+            | {
+                "nit": [
+                    "Paragraph 1, nit:\n",
+                    "- This is a first sentence.\n",
+                    "-                 ^^^^^^^^\n",
+                    "+ This is a first word.\n",
+                    "+                 ^^^^\n",
+                    "\n",
+                ],
+            },
+            self.empty_review
+            | {
+                "nit": [
+                    "Paragraph 1, nit:\n",
+                    "- This is a second sentence.\n",
+                    "-                  ^^^^^^^^\n",
+                    "+ This is a second word.\n",
+                    "+                  ^^^^\n",
+                    "\n",
+                ],
+            },
+        ]
+
+        for pos, exp in enumerate(expected):
+            review = self.two_lines.copy()
+            review[pos] = munge(review[pos])
+            with self.subTest(pos=pos):
+                self.compute_and_verify_result(self.two_lines, review, exp)
 
     def test_two_lines_inline_discuss_single_line(self):
-        """Two lines with an inline single-line DISCUSS between them."""
-        review = self.two_lines.copy()
-        review.insert(1, "DISCUSS: A single-line inline DISCUSS.\n")
-        expected = self.empty_review | {
-            "discuss": [
-                "Paragraph 0, discuss:\n",
-                "> This is a second sentence.\n",
-                "\n",
-                "A single-line inline DISCUSS.\n",
-                "\n",
-            ],
-        }
-        self.compute_and_verify_result(self.two_lines, review, expected)
+        """Two lines with an inline DISCUSS between them."""
+        expected = [
+            self.empty_review
+            | {
+                "discuss": [
+                    "Paragraph 1, discuss:\n",
+                    "A line of DISCUSS.\n",
+                    "\n",
+                ],
+            },
+            self.empty_review
+            | {
+                "discuss": [
+                    "Paragraph 0, discuss:\n",  # FIXME: 0 should be 1
+                    "A line of DISCUSS.\n",
+                    "\n",
+                    "Paragraph 1, discuss:\n",
+                    "A line of DISCUSS.\n",
+                    "\n",
+                ],
+            },
+        ]
 
-    def test_two_lines_inline_discuss_two_lines(self):
-        """Two lines with an inline two-line DISCUSS between them."""
-        review = self.two_lines.copy()
-        review.insert(1, "DISCUSS: A two-line inline DISCUSS.\n")
-        review.insert(2, "Second line of DISCUSS.\n")
-        expected = self.empty_review | {
-            "discuss": [
-                "Paragraph 0, discuss:\n",
-                "> This is a second sentence.\n",
-                "\n",
-                "A two-line inline DISCUSS.\n",
-                "Second line of DISCUSS.\n",
-                "\n",
-            ],
-        }
-        self.compute_and_verify_result(self.two_lines, review, expected)
+        for cnt, exp in enumerate(expected):
+            review = self.two_lines.copy()
+            for _ in range(cnt + 1):
+                review.insert(1, "DISCUSS: A line of DISCUSS.\n")
+            with self.subTest(cnt=cnt):
+                self.compute_and_verify_result(self.two_lines, review, exp)
 
     def test_two_lines_discuss(self):
-        """Two lines with a DISCUSS around them."""
-        cases = {}
-        for pos in range(1, 2):
+        """Two lines with a DISCUSS around one of them."""
+        expected = [
+            self.empty_review
+            | {
+                "discuss": [
+                    "Paragraph 1, discuss:\n",
+                    "> This is a first sentence.\n",
+                    "> This is a second sentence.\n",
+                    "\n",
+                    "First line of DISCUSS.\n",
+                    "Second line of DISCUSS.\n",
+                    "\n",
+                ],
+            },
+            self.empty_review
+            | {
+                "discuss": [
+                    "Paragraph 1, discuss:\n",
+                    "> This is a second sentence.\n",
+                    "\n",
+                    "First line of DISCUSS.\n",
+                    "Second line of DISCUSS.\n",
+                    "\n",
+                ],
+            },
+            self.empty_review
+            | {
+                "discuss": [
+                    "Paragraph 1, discuss:\n",
+                    "First line of DISCUSS.\n",
+                    "Second line of DISCUSS.\n",
+                    "\n",
+                ],
+            },
+        ]
+
+        for pos, exp in enumerate(expected):
             review = self.two_lines.copy()
-            review[pos] = self.make_inline_change(review[pos])
-            review.insert(0, "DISCUSS:\n")
+            review.insert(pos, "DISCUSS:\n")
             review.append("First line of DISCUSS.\n")
             review.append("Second line of DISCUSS.\n")
-            expected = self.empty_review | {
+
+            with self.subTest(pos=pos):
+                self.compute_and_verify_result(self.two_lines, review, exp)
+
+    def test_two_lines_discuss_with_nits(self):
+        """Two lines with a DISCUSS around one of them, and nits inside."""
+        expected = [
+            self.empty_review
+            | {
                 "discuss": [
-                    "Paragraph 0, discuss:\n",
+                    "Paragraph 1, discuss:\n",
                     "> This is a first sentence.\n",
                     "> This is a second sentence.\n",
                     "\n",
@@ -133,19 +194,43 @@ class TestReviewItem(unittest.TestCase):
                 "nit": [
                     "Paragraph 0, nit:\n",
                     "- This is a first sentence.\n",
-                    "                  ^^^^^^^^\n",
+                    "-                 ^^^^^^^^\n",
                     "+ This is a first word.\n",
-                    "                  ^^^^\n",
+                    "+                 ^^^^\n",
                     "\n",
                 ],
-            }
-            cases[pos] = (review, expected)
+            },
+            self.empty_review
+            | {
+                "discuss": [
+                    "Paragraph 1, discuss:\n",
+                    "> This is a first sentence.\n",
+                    "> This is a second sentence.\n",
+                    "\n",
+                    "First line of DISCUSS.\n",
+                    "Second line of DISCUSS.\n",
+                    "\n",
+                ],
+                "nit": [
+                    "Paragraph 0, nit:\n",
+                    "- This is a first sentence.\n",
+                    "-                 --------\n",
+                    "+ This is a first .\n",
+                    "\n",
+                ],
+            },
+        ]
+        repl = [r"word", r""]
 
-        for case in cases:
-            with self.subTest():
-                self.compute_and_verify_result(
-                    self.two_lines, cases[case][0], cases[case][1]
-                )
+        for pos, exp in enumerate(expected):
+            review = self.two_lines.copy()
+            review[0] = munge(review[0], repl[pos])
+            review.insert(0, "DISCUSS:\n")
+            review.append("First line of DISCUSS.\n")
+            review.append("Second line of DISCUSS.\n")
+
+            with self.subTest(pos=pos):
+                self.compute_and_verify_result(self.two_lines, review, exp)
 
 
 if __name__ == "__main__":
