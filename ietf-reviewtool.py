@@ -125,6 +125,7 @@ def strip_pagination(text: str) -> str:
     sentence = False
     have_blank = False
     for line in text.split("\n"):
+        # FIXME: doesn't always live a blank line after a figure caption
         mod = re.sub(r"\r", "", line)
         mod = re.sub(r"[ \t]+$", "", mod)
         if re.search(r"\[?[Pp]age [0-9ivx]+\]?[ \t\f]*$", mod):
@@ -354,10 +355,12 @@ def gather_nits(diff: list) -> list:
     result = []
 
     for num, cur in enumerate(diff):
+        kind = cur[0]
+
         if cur in ["+ \n", "- \n"]:
+            prev = kind
             continue
 
-        kind = cur[0]
         nxt = diff[num + 1] if num < len(diff) - 1 else None
         nxt_kind = nxt[0] if nxt else None
 
@@ -406,10 +409,12 @@ def strip_nits_from_diff(diff: list) -> list:
             continue_again = False
             continue
 
-        if cur == "+ \n":
+        kind = cur[0]
+
+        if cur in ["+ \n", "- \n"]:
+            prev = kind
             continue
 
-        kind = cur[0]
         nxt = diff[num + 1] if num < len(diff) - 1 else None
         nxt_kind = nxt[0] if nxt else None
 
