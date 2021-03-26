@@ -280,11 +280,12 @@ def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
     pot_sec = re.search(
         r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
         Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
+        Appendix[ ]+[0-9A-Z]+(?:\.[0-9]+)*\.?|
         [0-9]+(?:\.[0-9]+)*\.?)""",
         cur,
         re.VERBOSE,
     )
-    if pot_sec and re.search(r"^[\- ] +$", nxt):
+    if pot_sec and re.search(r"^([\- ] +$|\+ )", nxt):
         pot_sec = pot_sec.group(1)
         if re.match(r"\d", pot_sec):
             if had_nn:
@@ -476,9 +477,7 @@ def gather_comments(diff: list) -> dict:
     for num, cur in enumerate(diff):
         nxt = diff[num + 1] if num < len(diff) - 1 else None
 
-        start = re.search(
-            r"^\+ (?:(D(?:ISCUSS)|C(?:OMMENT)|N(?:IT)):?)? *(.*)", cur
-        )
+        start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)? *(.*)", cur)
         if start and start.group(1):
             if "cat" in item:
                 result[item["cat"]].extend(fmt_comment(item, para_sec))
