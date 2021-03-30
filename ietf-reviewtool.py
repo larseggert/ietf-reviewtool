@@ -198,14 +198,15 @@ def basename(item: str) -> str:
     return re.sub(r"^(?:.*/)?(.*[^-0-9]+)(-[0-9]+)+(?:\.txt)?$", r"\1", item)
 
 
-def get_writeups(datatracker: str, item: str) -> None:
+def get_writeups(datatracker: str, item: str) -> str:
     """
     Download related document writeups for an item from the datatracker.
 
     @param      datatracker  The datatracker URL to use
     @param      item         The item to download writeups for
 
-    @return     -
+    @return     The text of the writeup, if only a single one existed, else
+                None.
     """
     url = (
         datatracker
@@ -218,8 +219,14 @@ def get_writeups(datatracker: str, item: str) -> None:
         events = {
             e["type"]
             for e in doc_events
-            if e != "changed_ballot_approval_text"
+            if e["type"]
+            not in [
+                "changed_ballot_approval_text",
+                "changed_action_announcement",
+                "changed_review_announcement",
+            ]
         }
+        logging.debug(events)
         for evt in events:
             type_events = [e for e in doc_events if e["type"] == evt]
             type_events.sort(
@@ -227,15 +234,17 @@ def get_writeups(datatracker: str, item: str) -> None:
                 reverse=True,
             )
             text = type_events[0]["text"]
-            if text:
-                suffix = re.sub(r"^(?:changed_)?(.*)(?:_text)?", r"\1", evt)
 
-                file_name = (
-                    re.sub(r"(.*)\.txt", r"\1", item) + "." + suffix + ".txt"
-                )
-                write(text, file_name)
+            directory = re.sub(r"^(?:changed_)?(.*)?", r"\1", evt)
+            if not os.path.isdir(directory):
+                os.mkdir(directory)
+
+            if text:
+                write(text, os.path.join(directory, item + ".txt"))
             else:
                 logging.debug("no %s for %s", evt, item)
+
+        return text if len(events) == 1 else None
 
 
 def get_items(
@@ -268,6 +277,7 @@ def get_items(
 
         logging.info("Getting %s", item)
         cache = None
+        text = None
         if item.startswith("draft-"):
             url = "https://ietf.org/archive/id/" + file_name
             cache = os.getenv("IETF_IDS")
@@ -283,13 +293,14 @@ def get_items(
             # cache = os.getenv("IETF_CHARTERS")
             strip = False
         elif item.startswith("conflict-review-"):
-            url = "https://ietf.org/cr/" + file_name
-            cache = os.getenv("IETF_CONFLICT_REVIEWS")
+            doc = re.sub(r"conflict-review-(.*)", r"draft-\1", item)
+            text = get_writeups(datatracker, doc)
+            # TODO: in-progress conflict-reviews are not in the cache
+            # cache = os.getenv("IETF_CONFLICT_REVIEWS")
             strip = False
         else:
             die("Unknown item type: ", item)
 
-        text = None
         if cache is not None:
             cache_file = os.path.join(cache, file_name)
             if os.path.isfile(cache_file):
