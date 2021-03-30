@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-2.0
 """
 
 import argparse
+import datetime
 import difflib
 import json
 import logging
@@ -185,13 +186,70 @@ def strip_pagination(text: str) -> str:
     return stripped
 
 
-def get_items(items: list, datatracker: str, strip: bool = True) -> None:
+def basename(item: str) -> str:
+    """
+    Return the base name of a given item by stripping the path, the version
+    information and the txt suffix.
+
+    @param      item  The item to return the base name for
+
+    @return     The base name of the item
+    """
+    return re.sub(r"^(?:.*/)?(.*[^-0-9]+)(-[0-9]+)+(?:\.txt)?$", r"\1", item)
+
+
+def get_writeups(datatracker: str, item: str) -> None:
+    """
+    Download related document writeups for an item from the datatracker.
+
+    @param      datatracker  The datatracker URL to use
+    @param      item         The item to download writeups for
+
+    @return     -
+    """
+    url = (
+        datatracker
+        + "/api/v1/doc/writeupdocevent/?format=json&doc__name="
+        + basename(item)
+    )
+    doc_events = fetch_url(url)
+    if doc_events is not None:
+        doc_events = json.loads(doc_events)["objects"]
+        events = {
+            e["type"]
+            for e in doc_events
+            if e != "changed_ballot_approval_text"
+        }
+        for evt in events:
+            type_events = [e for e in doc_events if e["type"] == evt]
+            type_events.sort(
+                key=lambda k: datetime.datetime.fromisoformat(k["time"]),
+                reverse=True,
+            )
+            text = type_events[0]["text"]
+            if text:
+                suffix = re.sub(r"^(?:changed_)?(.*)(?:_text)?", r"\1", evt)
+
+                file_name = (
+                    re.sub(r"(.*)\.txt", r"\1", item) + "." + suffix + ".txt"
+                )
+                write(text, file_name)
+            else:
+                logging.debug("no %s for %s", evt, item)
+
+
+def get_items(
+    items: list, datatracker: str, strip: bool = True, get_writeup=False
+) -> None:
     """
     Download named items into files of the same name in the current directory.
-    Does not overwrite existing files. Names need to include the revision,
-    and may or may not include the ".txt" suffix.
+    Does not overwrite existing files. Names need to include the revision, and
+    may or may not include the ".txt" suffix.
 
-    @param      items  The items to download.
+    @param      items        The items to download.
+    @param      datatracker  The datatracker URL to use
+    @param      strip        Whether to run strip() on the downloaded item
+    @param      get_writeup  Whether to download associated write-ups
 
     @return     -
     """
@@ -200,6 +258,10 @@ def get_items(items: list, datatracker: str, strip: bool = True) -> None:
         file_name = item
         if not file_name.endswith(".txt"):
             file_name += ".txt"
+
+        if get_writeup:
+            get_writeups(datatracker, item)
+
         if os.path.isfile(file_name):
             logging.warning("%s exists, skipping", file_name)
             continue
@@ -693,6 +755,14 @@ def parse_args() -> dict:
             required=False,
             help="strip headers, footers and pagination from downloaded I-Ds",
         )
+        parser.add_argument(
+            "--fetch-writeups",
+            dest="writeups",
+            action=argparse.BooleanOptionalAction,
+            default=(parser == parser_fetch_agenda),
+            required=False,
+            help="fetch various write-ups related to the item",
+        )
 
     parser_strip = subparsers.add_parser(
         "strip",
@@ -763,12 +833,12 @@ def main() -> None:
             "Downloading ballot items from %s IESG agenda",
             agenda["telechat-date"],
         )
-        get_items(items, args.datatracker, args.strip)
+        get_items(items, args.datatracker, args.strip, args.writeups)
         if args.mkdir:
             os.chdir(current_directory)
 
     elif args.tool == "fetch":
-        get_items(args.items, args.datatracker, args.strip)
+        get_items(args.items, args.datatracker, args.strip, args.writeups)
 
     elif args.tool == "strip":
         strip_items(args.items, args.in_place)
