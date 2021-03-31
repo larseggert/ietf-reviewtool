@@ -77,7 +77,11 @@ def read(file_name: str) -> str:
 
     @return     The content of the item.
     """
-    file = open(file_name, "r")
+    try:
+        file = open(file_name, "r")
+    except FileNotFoundError as err:
+        logging.error("%s -> %s", file_name, err)
+        return None
     text = file.read()
     file.close()
     return text
@@ -370,10 +374,10 @@ def get_items(
         if text is None:
             text = fetch_url(url)
 
-        if strip:
-            logging.debug("Stripping %s", item)
-            text = strip_pagination(text)
         if text is not None:
+            if strip:
+                logging.debug("Stripping %s", item)
+                text = strip_pagination(text)
             write(text, file_name)
 
 
@@ -743,6 +747,10 @@ def review_items(items: list, datatracker: str, check_urls: bool) -> None:
             orig_item = os.path.basename(item)
             get_items([orig_item], datatracker)
             orig = read(orig_item)
+            if orig is None:
+                logging.error("No original for %s, cannot review", orig_item)
+                continue
+
             os.chdir(current_directory)
             rev = read(item).splitlines(keepends=True)
             review = review_item(orig.splitlines(keepends=True), rev)
