@@ -33,6 +33,7 @@ import tempfile
 import textwrap
 import urllib.error
 import urllib.request
+import urllib.parse
 
 
 def die(msg: list, err: int = 1) -> None:
@@ -95,6 +96,63 @@ def write(text: str, file_name: str) -> None:
     text = file.write(text)
     file.close()
     return text
+
+
+def extract_urls(
+    text: str, examples: bool = False, common: bool = False
+) -> set:
+    """
+    Return a list of URLs in a text string.
+
+    @param      text      The text to extract URLs from.
+    @param      examples  Include example URLs.
+    @param      common    Include URLs that are common in IETF documents.
+
+    @return     List of URLs.
+    """
+
+    # prepare text
+    rand = r"bYYO2hxg2Bg4HhwEsbJQSSucukxfAbAIcDrPu5dw"
+    text = re.sub(r"\n{2,}", rand, text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*", r"", text, flags=re.MULTILINE)
+    text = re.sub(r"[\n\r]+", r"", text, flags=re.MULTILINE)
+    text = re.sub(rand, r"\n", text, flags=re.MULTILINE)
+
+    # find all URLs
+    urls = re.findall(
+        r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#]+\.?)+(?:/[^\s)\">]*)?",
+        text,
+        flags=re.UNICODE | re.IGNORECASE,
+    )
+
+    if not examples:
+        # remove example URLs
+        urls = [
+            u
+            for u in urls
+            if not re.search(
+                r"example\.(?:com|net|org)|\.example$",
+                urllib.parse.urlparse(u).netloc,
+            )
+        ]
+
+    if not common:
+        # remove some common URLs
+        urls = [
+            u
+            for u in urls
+            if not re.search(
+                r"""https?://
+                    datatracker\.ietf\.org/drafts/current/|
+                    trustee\.ietf\.org/license-info|
+                    (www\.)?rfc-editor\.org/info/rfc[0-9]+|
+                    (www\.)?ietf\.org/archive/id/draft-""",
+                u,
+                flags=re.VERBOSE,
+            )
+        ]
+
+    return urls
 
 
 def get_current_agenda(datatracker: str) -> dict:
@@ -656,7 +714,7 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
                 print(line, end="")
 
 
-def review_items(items: list, datatracker: str) -> None:
+def review_items(items: list, datatracker: str, check_urls: bool) -> None:
     """
     Extract reviews from named items.
 
@@ -684,10 +742,29 @@ def review_items(items: list, datatracker: str) -> None:
             os.chdir(tmp)
             orig_item = os.path.basename(item)
             get_items([orig_item], datatracker)
-            orig = read(orig_item).splitlines(keepends=True)
+            orig = read(orig_item)
             os.chdir(current_directory)
             rev = read(item).splitlines(keepends=True)
-            review = review_item(orig, rev)
+            review = review_item(orig.splitlines(keepends=True), rev)
+
+            if check_urls:
+                result = []
+                urls = extract_urls(orig)
+                texts = {u: fetch_url(u) for u in urls}
+                for url in urls:
+                    if texts[url] is None:
+                        result.append(f" * {url}\n")
+
+                if result:
+                    result.insert(
+                        0,
+                        (
+                            "The following URLs in the document "
+                            "failed to return content:\n"
+                        ),
+                    )
+                    review["nit"].extend(result)
+
             fmt_review(review)
 
 
@@ -796,6 +873,15 @@ def parse_args() -> dict:
         help="extract review from named items",
     )
 
+    parser_review.add_argument(
+        "--check-urls",
+        dest="check_urls",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        required=False,
+        help="check if URLs resolve",
+    )
+
     for parser in [parser_fetch, parser_strip, parser_review]:
         parser.add_argument(
             "items",
@@ -855,7 +941,7 @@ def main() -> None:
         strip_items(args.items, args.in_place)
 
     elif args.tool == "review":
-        review_items(args.items, args.datatracker)
+        review_items(args.items, args.datatracker, args.check_urls)
 
 
 if __name__ == "__main__":
