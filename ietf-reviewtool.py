@@ -48,21 +48,23 @@ def die(msg: list, err: int = 1) -> None:
     sys.exit(err)
 
 
-def fetch_url(url: str) -> str:
+def fetch_url(url: str, method: str = "GET") -> str:
     """
     Fetches the resource at the given URL.
 
-    @param      url   The URL to fetch
+    @param      url     The URL to fetch
+    @param      method  The method to use (default "GET").
 
     @return     The decoded content of the resource.
     """
     try:
-        logging.debug("fetch %s", url)
-        resource = urllib.request.urlopen(url)
+        logging.debug("%s %s", method.lower(), url)
+        request = urllib.request.Request(url=url, method=method)
+        resource = urllib.request.urlopen(request)
         charset = resource.headers.get_content_charset()
         if charset is None:
             charset = "utf8"
-        text = resource.read().decode(charset)
+        text = resource.read().decode(charset) if method != "HEAD" else ""
     except (urllib.error.URLError, urllib.error.HTTPError) as err:
         logging.error("%s -> %s", url, err)
         return None
@@ -124,7 +126,7 @@ def extract_urls(
 
     # find all URLs
     urls = re.findall(
-        r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#]+\.?)+(?:/[^\s)\">]*)?",
+        r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#]+\.?)+(?:/[^\s)\">;]*)?",
         text,
         flags=re.UNICODE | re.IGNORECASE,
     )
@@ -149,7 +151,7 @@ def extract_urls(
                 r"""https?://
                     datatracker\.ietf\.org/drafts/current/|
                     trustee\.ietf\.org/license-info|
-                    (www\.)?rfc-editor\.org/info/rfc[0-9]+|
+                    (www\.)?rfc-editor\.org/info/rfc\d+|
                     (www\.)?ietf\.org/archive/id/draft-""",
                 u,
                 flags=re.VERBOSE,
@@ -163,6 +165,8 @@ def get_current_agenda(datatracker: str) -> dict:
     """
     Download and the current IESG telechat agenda in JSON format.
 
+    @param      datatracker  The datatracker URL to use
+
     @return     The current agenda as a dict.
     """
     agenda = fetch_url(datatracker + "/iesg/agenda/agenda.json")
@@ -173,8 +177,7 @@ def get_current_agenda(datatracker: str) -> dict:
 
 def get_items_on_agenda(agenda: dict) -> list:
     """
-    Given an IESG telechat agenda dict, return the list of items that
-    are on it.
+    Given an IESG telechat agenda dict, return the list of items that are on it.
 
     @param      agenda  An agenda dict.
 
@@ -204,43 +207,51 @@ def strip_pagination(text: str) -> str:
     new_page = False
     sentence = False
     have_blank = False
-    for line in text.split("\n"):
-        # FIXME: doesn't always live a blank line after a figure caption
+    for num, line in enumerate(text.split("\n")):
+        # FIXME: doesn't always leave a blank line after a figure caption
         mod = re.sub(r"\r", "", line)
-        mod = re.sub(r"[ \t]+$", "", mod)
-        if re.search(r"\[?[Pp]age [0-9ivx]+\]?[ \t\f]*$", mod):
+        mod = re.sub(r"\s+$", "", mod)
+        if re.search(r"\[?[Pp]age [\divx]+\]?[\s\f]*$", mod):
             continue
         if (
-            re.search(r"^[ \t]*\f", mod)
-            or re.search(
-                r"^ *I(nternet|NTERNET).D(raft|RAFT).+[12][0-9]{3} *$",
-                mod,
+            re.search(r"^\s*\f", mod)
+            or (
+                num > 0
+                and re.search(
+                    r"^\s*I(nternet|NTERNET).D(raft|RAFT)\s{3,}.*$",
+                    mod,
+                )
             )
-            or re.search(r"^ *Draft.+[12][0-9]{3} *$", mod)
-            or re.search(r"^(RFC.+[0-9]+|draft-[-a-z0-9_.]+.*[0-9]{4})$", mod)
+            or re.search(r"^\s*Draft.+[12]\d{3}\s*$", mod)
             or re.search(
-                r"""(Jan|Feb|Mar(ch)?|Apr(il)?|
-                        May|June?|July?|Aug|Sep|Oct|Nov|Dec)[ ]
-                        (19[89][0-9]|20[0-9]{2})[ ]*$""",
+                r"^(RFC.+\d+|draft-[-a-z\d_.]+.*\d{4})$",
+                mod,
+                re.UNICODE,
+            )
+            or re.search(
+                r"""^\s*(RFC|Internet-Draft).*
+                        (Jan|Feb|Mar(ch)?|Apr(il)?|
+                        May|June?|July?|Aug|Sep|Oct|Nov|Dec)\s
+                        (19[89]\d|20\d{2})\s*$""",
                 mod,
                 re.VERBOSE,
             )
         ):
             new_page = True
             continue
-        if new_page and re.search(r"^ *draft-[-a-z0-9_.]+ *$", line):
+        if new_page and re.search(r"^\s*draft-[-a-z\d_.]+\s*$", line):
             continue
-        if re.search(r"^[^ \t]", mod):
+        if re.search(r"^\S", mod):
             sentence = True
-        if re.search(r"[^ \t]", mod):
+        if re.search(r"\S", mod):
             if (new_page and sentence) or (not new_page and have_blank):
                 stripped += "\n"
             have_blank = False
             sentence = False
             new_page = False
-        if re.search(r"[.:][ \t]*$", mod):
+        if re.search(r"([.:?!]\s*|(https?|ftp)://\S+)$", mod):
             sentence = True
-        if re.search(r"^[ \t]*$", mod):
+        if re.search(r"^\s*$", mod):
             have_blank = True
             continue
         stripped += mod + "\n"
@@ -257,7 +268,7 @@ def basename(item: str) -> str:
 
     @return     The base name of the item
     """
-    return re.sub(r"^(?:.*/)?(.*[^-0-9]+)(-[0-9]+)+(?:\.txt)?$", r"\1", item)
+    return re.sub(r"^(?:.*/)?(.*[^-\d]+)(-\d+)+(?:\.txt)?$", r"\1", item)
 
 
 def get_writeups(datatracker: str, item: str) -> str:
@@ -265,7 +276,7 @@ def get_writeups(datatracker: str, item: str) -> str:
     Download related document writeups for an item from the datatracker.
 
     @param      datatracker  The datatracker URL to use
-    @param      item         The item to download writeups for
+    @param      item         The item to download write-ups for
 
     @return     The text of the writeup, if only a single one existed, else
                 None.
@@ -348,7 +359,7 @@ def get_items(
             cache = os.getenv("IETF_RFCS")
         elif item.startswith("charter-"):
             url_pattern = re.sub(
-                r"(.*)(((-[0-9]+){2}).txt)$", r"\1/withmilestones\2", file_name
+                r"(.*)(((-\d+){2}).txt)$", r"\1/withmilestones\2", file_name
             )
             url = datatracker + "/doc/" + url_pattern
             # TODO: the charters in rsync don't have milestones, can't use
@@ -385,7 +396,9 @@ def strip_items(items: list, in_place: bool = False) -> None:
     """
     Run strip_pagination over the named items.
 
-    @param      items  The items to strip.
+    @param      items     The items to strip.
+    @param      in_place  Whether to overwrite the item, or save a ".stripped"
+                          copy.
 
     @return     -
     """
@@ -430,10 +443,10 @@ def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
 
     # track sections
     pot_sec = re.search(
-        r"""^[- ][ ](Abstract|Status[ ]of[ ]This[ ]Memo|Copyright[ ]Notice|
-        Table[ ]of[ ]Contents|Author(?:'?s?'?)?[ ]Address(?:es)?|
-        Appendix[ ]+[0-9A-Z]+(?:\.[0-9]+)*\.?|
-        [0-9]+(?:\.[0-9]+)*\.?)""",
+        r"""^[- ]\s(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
+        Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
+        Appendix\s+[\dA-Z]+(?:\.\d+)*\.?|
+        \d+(?:\.\d+)*\.?)""",
         cur,
         re.VERBOSE,
     )
@@ -629,7 +642,7 @@ def gather_comments(diff: list) -> dict:
     for num, cur in enumerate(diff):
         nxt = diff[num + 1] if num < len(diff) - 1 else None
 
-        start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)? *(.*)", cur)
+        start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
         if start and start.group(1):
             if "cat" in item:
                 result[item["cat"]].extend(fmt_comment(item, para_sec))
@@ -722,7 +735,9 @@ def review_items(items: list, datatracker: str, check_urls: bool) -> None:
     """
     Extract reviews from named items.
 
-    @param      items  The items to extract reviews from.
+    @param      items        The items to extract reviews from.
+    @param      datatracker  The datatracker URL to use
+    @param      check_urls   Whether to check URLs for reachability.
 
     @return     -
     """
@@ -758,7 +773,7 @@ def review_items(items: list, datatracker: str, check_urls: bool) -> None:
             if check_urls:
                 result = []
                 urls = extract_urls(orig)
-                texts = {u: fetch_url(u) for u in urls}
+                texts = {u: fetch_url(u, "HEAD") for u in urls}
                 for url in urls:
                     if texts[url] is None:
                         result.append(f" * {url}\n")
@@ -795,7 +810,8 @@ def parse_args() -> dict:
         "-v",
         "--verbose",
         dest="verbose",
-        action="store_true",
+        action="count",
+        default=0,
         help=("be more verbose during operation"),
     )
 
@@ -911,7 +927,13 @@ def main() -> None:
 
     args.datatracker = re.sub(r"/+$", "", args.datatracker)
 
-    if args.verbose:
+    if args.verbose > 0:
+        if args.verbose > 1:
+            cookie = urllib.request.HTTPCookieProcessor()
+            handler = urllib.request.HTTPSHandler(debuglevel=1)
+            opener = urllib.request.build_opener(handler, cookie)
+            urllib.request.install_opener(opener)
+
         logging.basicConfig(
             level=logging.DEBUG, format="%(levelname)s: %(message)s"
         )
