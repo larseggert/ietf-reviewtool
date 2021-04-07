@@ -215,7 +215,8 @@ def get_current_agenda(datatracker: str) -> dict:
 
 def get_items_on_agenda(agenda: dict) -> list:
     """
-    Given an IESG telechat agenda dict, return the list of items that are on it.
+    Given an IESG telechat agenda dict, return the list of items that are on
+    it.
 
     @param      agenda  An agenda dict.
 
@@ -494,8 +495,8 @@ def strip_items(items: list, in_place: bool = False) -> None:
 def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
     """
     Return a list consisting of the current paragraph number and section title,
-    based on the next and current lines of text and the current paragraph number
-    and section title list.
+    based on the next and current lines of text and the current paragraph
+    number and section title list.
 
     @param      nxt       The next line in the diff.
     @param      cur       The current line in the diff
