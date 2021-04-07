@@ -1,5 +1,3 @@
-#! /usr/bin/env python3
-
 """
 Review tool for IETF documents.
 
@@ -21,7 +19,6 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
-import argparse
 import datetime
 import difflib
 import json
@@ -31,9 +28,54 @@ import re
 import sys
 import tempfile
 import textwrap
-import urllib.error
-import urllib.request
 import urllib.parse
+
+import appdirs
+import click
+import requests
+import requests_cache
+
+
+class State:
+    def __init__(self, datatracker=None, verbose=False):
+        self.datatracker = datatracker
+        self.verbose = verbose
+
+
+@click.group(help="Review tool for IETF documents.")
+@click.option(
+    "--verbose",
+    "-v",
+    default=0,
+    count=True,
+    help="Be more verbose during operation.",
+)
+@click.option(
+    "--datatracker",
+    default="https://datatracker.ietf.org/",
+    help="IETF Datatracker base URL.",
+)
+@click.pass_context
+def cli(ctx, datatracker: str, verbose: bool) -> None:
+    datatracker = re.sub(r"/+$", "", datatracker)
+    ctx.obj = State(datatracker, verbose)
+
+    if verbose > 0:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    cache = appdirs.user_cache_dir("ietf-reviewtool")
+    if not os.path.isdir(cache):
+        os.mkdir(cache)
+    logging.debug("Using cache directory %s", cache)
+    requests_cache.install_cache(
+        cache_name=os.path.join(cache, "ietf-reviewtool"),
+        backend="sqlite",
+        expire_after=datetime.timedelta(days=30),
+    )
 
 
 def die(msg: list, err: int = 1) -> None:
@@ -59,16 +101,12 @@ def fetch_url(url: str, method: str = "GET") -> str:
     """
     try:
         logging.debug("%s %s", method.lower(), url)
-        request = urllib.request.Request(url=url, method=method)
-        resource = urllib.request.urlopen(request)
-        charset = resource.headers.get_content_charset()
-        if charset is None:
-            charset = "utf8"
-        text = resource.read().decode(charset) if method != "HEAD" else ""
-    except (urllib.error.URLError, urllib.error.HTTPError) as err:
+        response = requests.get(url) if method == "GET" else requests.head(url)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as err:
         logging.error("%s -> %s", url, err)
         return None
-    return text
+    return response.text
 
 
 def read(file_name: str) -> str:
@@ -299,7 +337,8 @@ def get_writeups(datatracker: str, item: str) -> str:
                 "changed_review_announcement",
             ]
         }
-        logging.debug(events)
+        if events:
+            logging.debug(events)
         for evt in events:
             type_events = [e for e in doc_events if e["type"] == evt]
             type_events.sort(
@@ -318,6 +357,27 @@ def get_writeups(datatracker: str, item: str) -> str:
                 logging.debug("no %s for %s", evt, item)
 
         return text if len(events) == 1 else None
+
+
+@click.command("fetch", help="Download items (I-Ds, charters, RFCs, etc.)")
+@click.argument("items", nargs=-1)
+@click.option(
+    "--strip/--no-strip",
+    "strip",
+    default=True,
+    help="Strip headers, footers and pagination from downloaded items.",
+)
+@click.option(
+    "--fetch-writeups/--no-fetch-writeups",
+    "fetch_writeups",
+    default=True,
+    help="Fetch various write-ups related to the item.",
+)
+@click.pass_obj
+def fetch(
+    state: object, items: list, strip: bool, fetch_writeups: bool
+) -> None:
+    get_items(list, state.datatracker, strip, fetch_writeups)
 
 
 def get_items(
@@ -392,6 +452,16 @@ def get_items(
             write(text, file_name)
 
 
+@click.command(
+    "strip", help="Strip headers, footers and pagination from items."
+)
+@click.argument("items", nargs=-1)
+@click.option(
+    "--in-place/--no-in-place",
+    "in_place",
+    default=False,
+    help="Overwrite original item with stripped version.",
+)
 def strip_items(items: list, in_place: bool = False) -> None:
     """
     Run strip_pagination over the named items.
@@ -731,7 +801,16 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
                 print(line, end="")
 
 
-def review_items(items: list, datatracker: str, check_urls: bool) -> None:
+@click.command("review", help="Extract review from named items.")
+@click.argument("items", nargs=-1)
+@click.option(
+    "--check_urls/--no-check_urls",
+    "check_urls",
+    default=True,
+    help="Check if URLs resolve.",
+)
+@click.pass_obj
+def review_items(state: object, items: list, check_urls: bool) -> None:
     """
     Extract reviews from named items.
 
@@ -760,7 +839,7 @@ def review_items(items: list, datatracker: str, check_urls: bool) -> None:
 
             os.chdir(tmp)
             orig_item = os.path.basename(item)
-            get_items([orig_item], datatracker)
+            get_items([orig_item], state.datatracker)
             orig = read(orig_item)
             if orig is None:
                 logging.error("No original for %s, cannot review", orig_item)
@@ -791,188 +870,62 @@ def review_items(items: list, datatracker: str, check_urls: bool) -> None:
             fmt_review(review)
 
 
-def parse_args() -> dict:
-    """
-    Parse arguments.
+@click.command(
+    "fetch-agenda",
+    help="Download all ballot items on the current IESG agenda.",
+)
+@click.option(
+    "--make-directory/--no-make-directory",
+    "mkdir",
+    default=True,
+    help="Create agenda subdirectory for all downloaded ballot items.",
+)
+@click.option(
+    "--save-agenda/--no-save-agenda",
+    "save_agenda",
+    default=True,
+    help="Store the telechat agenda in JSON format.",
+)
+@click.option(
+    "--strip/--no-strip",
+    "strip",
+    default=True,
+    help="Strip headers, footers and pagination from downloaded items.",
+)
+@click.option(
+    "--fetch-writeups/--no-fetch-writeups",
+    "fetch_writeups",
+    default=True,
+    help="Fetch various write-ups related to the item.",
+)
+@click.pass_obj
+def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
+    agenda = get_current_agenda(state.datatracker)
+    if "telechat-date" not in agenda:
+        return
+    items = get_items_on_agenda(agenda)
 
-    @return     Dict of parsed arguments.
-    """
-    main_parser = argparse.ArgumentParser(
-        description="Review tool for IETF documents.",
-        epilog="""In order to operate offline and to speed up operation,
-            if you rsync the the various IETF documents onto your local disk,
-            set these environment variables to use your local caches as much as
-            possible: IETF_CHARTERS, IETF_CONFLICT_REVIEWS, IETF_IDS,
-            IETF_RFCS, IETF_STATUS_CHANGES""",
+    if mkdir:
+        current_directory = os.getcwd()
+        agenda_directory = agenda["telechat-date"]
+        if not os.path.isdir(agenda_directory):
+            os.mkdir(agenda_directory)
+        os.chdir(agenda_directory)
+
+    if save_agenda:
+        write(json.dumps(agenda, indent=4), "agenda.json")
+
+    logging.info(
+        "Downloading ballot items from %s IESG agenda",
+        agenda["telechat-date"],
     )
-
-    main_parser.add_argument(
-        "-v",
-        "--verbose",
-        dest="verbose",
-        action="count",
-        default=0,
-        help=("be more verbose during operation"),
-    )
-
-    main_parser.add_argument(
-        "--datatracker",
-        dest="datatracker",
-        type=str,
-        metavar="URL",
-        default="https://dt.ietf.org/",
-        help=("IETF Datatracker base URL"),
-    )
-
-    subparsers = main_parser.add_subparsers(
-        help="desired review tool", dest="tool"
-    )
-    subparsers.required = True
-
-    parser_fetch = subparsers.add_parser(
-        "fetch",
-        prog="fetch",
-        help="download items (I-Ds, charters, RFCs, etc.)",
-    )
-
-    parser_fetch_agenda = subparsers.add_parser(
-        "fetch-agenda",
-        help=("download all ballot items on the current IESG agenda"),
-    )
-
-    parser_fetch_agenda.add_argument(
-        "--make-directory",
-        dest="mkdir",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        required=False,
-        help="create agenda subdirectory for all downloaded ballot items",
-    )
-
-    parser_fetch_agenda.add_argument(
-        "--save-agenda",
-        dest="save_agenda",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        required=False,
-        help="store the telechat agenda in JSON format",
-    )
-
-    for parser in [parser_fetch, parser_fetch_agenda]:
-        parser.add_argument(
-            "--strip",
-            dest="strip",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            required=False,
-            help="strip headers, footers and pagination from downloaded I-Ds",
-        )
-        parser.add_argument(
-            "--fetch-writeups",
-            dest="writeups",
-            action=argparse.BooleanOptionalAction,
-            default=(parser == parser_fetch_agenda),
-            required=False,
-            help="fetch various write-ups related to the item",
-        )
-
-    parser_strip = subparsers.add_parser(
-        "strip",
-        prog="strip",
-        help=("strip headers, footers and pagination from items"),
-    )
-
-    parser_strip.add_argument(
-        "--in-place",
-        dest="in_place",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        required=False,
-        help="overwrite original item with stripped version",
-    )
-
-    parser_review = subparsers.add_parser(
-        "review",
-        prog="review",
-        help="extract review from named items",
-    )
-
-    parser_review.add_argument(
-        "--check-urls",
-        dest="check_urls",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        required=False,
-        help="check if URLs resolve",
-    )
-
-    for parser in [parser_fetch, parser_strip, parser_review]:
-        parser.add_argument(
-            "items",
-            metavar="item",
-            nargs="+",
-            help="names of items to " + parser.prog,
-        )
-
-    return main_parser.parse_args()
+    print(items)
+    get_items(items, state.datatracker, strip, fetch_writeups)
+    if mkdir:
+        os.chdir(current_directory)
 
 
-def main() -> None:
-    """
-    Parse options and execute things.
-
-    @return     -
-    """
-    args = parse_args()
-
-    args.datatracker = re.sub(r"/+$", "", args.datatracker)
-
-    if args.verbose > 0:
-        if args.verbose > 1:
-            cookie = urllib.request.HTTPCookieProcessor()
-            handler = urllib.request.HTTPSHandler(debuglevel=1)
-            opener = urllib.request.build_opener(handler, cookie)
-            urllib.request.install_opener(opener)
-
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(levelname)s: %(message)s"
-        )
-    else:
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-    if args.tool == "fetch-agenda":
-        agenda = get_current_agenda(args.datatracker)
-        if "telechat-date" not in agenda:
-            return
-        items = get_items_on_agenda(agenda)
-
-        if args.mkdir:
-            current_directory = os.getcwd()
-            agenda_directory = agenda["telechat-date"]
-            if not os.path.isdir(agenda_directory):
-                os.mkdir(agenda_directory)
-            os.chdir(agenda_directory)
-
-        if args.save_agenda:
-            write(json.dumps(agenda, indent=4), "agenda.json")
-
-        logging.info(
-            "Downloading ballot items from %s IESG agenda",
-            agenda["telechat-date"],
-        )
-        get_items(items, args.datatracker, args.strip, args.writeups)
-        if args.mkdir:
-            os.chdir(current_directory)
-
-    elif args.tool == "fetch":
-        get_items(args.items, args.datatracker, args.strip, args.writeups)
-
-    elif args.tool == "strip":
-        strip_items(args.items, args.in_place)
-
-    elif args.tool == "review":
-        review_items(args.items, args.datatracker, args.check_urls)
-
-
-if __name__ == "__main__":
-    main()
+cli.add_command(fetch_agenda)
+cli.add_command(fetch)
+cli.add_command(strip_items)
+cli.add_command(review_items)
