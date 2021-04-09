@@ -36,6 +36,15 @@ import requests
 import requests_cache
 
 
+SECTION_PATTERN = re.compile(
+    r"""^(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
+        Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
+        (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?|
+        \d+(?:\.\d+)*\.?)(.*)""",
+    re.VERBOSE,
+)
+
+
 class State:
     def __init__(self, datatracker=None, verbose=False):
         self.datatracker = datatracker
@@ -92,18 +101,26 @@ def die(msg: list, err: int = 1) -> None:
 
 def fetch_url(url: str, method: str = "GET") -> str:
     """
-    Fetches the resource at the given URL.
+    Fetches the resource at the given URL or checks its reachability (when
+    method is "HEAD".) In the latter case, the cache is also disabled.
 
     @param      url     The URL to fetch
     @param      method  The method to use (default "GET").
 
-    @return     The decoded content of the resource.
+    @return     The decoded content of the resource (or the empty string for a
+                successful HEAD request). None if an error occurred.
     """
     try:
         logging.debug("%s %s", method.lower(), url)
-        response = requests.get(url) if method == "GET" else requests.head(url)
+        if method == "GET":
+            response = requests.get(url, allow_redirects=True)
+        elif method == "HEAD":
+            with requests_cache.disabled():
+                response = requests.head(url, allow_redirects=True)
+        else:
+            die(f"unknown method {method}")
         response.raise_for_status()
-    except requests.exceptions.HTTPError as err:
+    except requests.exceptions.RequestException as err:
         logging.error("%s -> %s", url, err)
         return None
     return response.text
@@ -142,6 +159,15 @@ def write(text: str, file_name: str) -> None:
     return text
 
 
+def unfold(text: str) -> str:
+    rand = r"bYYO2hxg2Bg4HhwEsbJQSSucukxfAbAIcDrPu5dw"
+    text = re.sub(r"\n{2,}", rand, text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*", r"", text, flags=re.MULTILINE)
+    text = re.sub(r"[\n\r]+", r"", text, flags=re.MULTILINE)
+    text = re.sub(rand, r"\n", text, flags=re.MULTILINE)
+    return text
+
+
 def extract_urls(
     text: str, examples: bool = False, common: bool = False
 ) -> set:
@@ -155,19 +181,14 @@ def extract_urls(
     @return     List of URLs.
     """
 
-    # prepare text
-    rand = r"bYYO2hxg2Bg4HhwEsbJQSSucukxfAbAIcDrPu5dw"
-    text = re.sub(r"\n{2,}", rand, text, flags=re.MULTILINE)
-    text = re.sub(r"^\s*", r"", text, flags=re.MULTILINE)
-    text = re.sub(r"[\n\r]+", r"", text, flags=re.MULTILINE)
-    text = re.sub(rand, r"\n", text, flags=re.MULTILINE)
-
     # find all URLs
+    text = unfold(text)
     urls = re.findall(
         r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#]+\.?)+(?:/[^\s)\">;]*)?",
         text,
-        flags=re.UNICODE | re.IGNORECASE,
+        re.IGNORECASE,
     )
+    urls = [u.rstrip(".\"'>;") for u in urls]
 
     if not examples:
         # remove example URLs
@@ -265,7 +286,6 @@ def strip_pagination(text: str) -> str:
             or re.search(
                 r"^(RFC.+\d+|draft-[-a-z\d_.]+.*\d{4})$",
                 mod,
-                re.UNICODE,
             )
             or re.search(
                 r"""^\s*(RFC|Internet-Draft).*
@@ -378,7 +398,7 @@ def get_writeups(datatracker: str, item: str) -> str:
 def fetch(
     state: object, items: list, strip: bool, fetch_writeups: bool
 ) -> None:
-    get_items(list, state.datatracker, strip, fetch_writeups)
+    get_items(items, state.datatracker, strip, fetch_writeups)
 
 
 def get_items(
@@ -513,14 +533,7 @@ def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
         para += 1
 
     # track sections
-    pot_sec = re.search(
-        r"""^[- ]\s(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
-        Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
-        Appendix\s+[\dA-Z]+(?:\.\d+)*\.?|
-        \d+(?:\.\d+)*\.?)""",
-        cur,
-        re.VERBOSE,
-    )
+    pot_sec = SECTION_PATTERN.search(cur)
     if pot_sec and re.search(r"^([\- ] +$|\+ )", nxt):
         pot_sec = pot_sec.group(1)
         if re.match(r"\d", pot_sec):
@@ -802,6 +815,173 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
                 print(line, end="")
 
 
+def extract_refs(text: list) -> dict:
+    """
+    Return a dict of references found in the text as well as the normative and
+    informative reference sections.
+
+    @param      text  The text to parse for references.
+
+    @return     A dict with lists of found references.
+    """
+    parts = {"text": "", "informative": "", "normative": ""}
+    part = "text"
+    for line in text.splitlines(keepends=True):
+        pot_sec = SECTION_PATTERN.search(line)
+        if pot_sec:
+            which = pot_sec.group(0)
+            if re.search(
+                r"^(\d\.?)+\s+Informative\s+References?", which, re.IGNORECASE
+            ):
+                part = "informative"
+            elif re.search(
+                r"^(\d\.?)+\s+(Normative\s+)?References?", which, re.IGNORECASE
+            ):
+                part = "normative"
+            else:
+                part = "text"
+        parts[part] += line
+
+    refs = {}
+    for part in parts:
+        refs[part] = re.findall(
+            r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\])",
+            parts[part],
+            re.IGNORECASE,
+        )
+
+    resolved = {}
+    for part in ["informative", "normative"]:
+        resolved[part] = []
+        for ref in refs[part]:
+            ref_text = re.search(
+                r"\s*" + re.escape(ref) + r"\s+(?s)((?:[^\n][\n]?)+)\n",
+                parts[part],
+            )
+            if ref_text:
+                ref_text = unfold(ref_text.group(0))
+                found = False
+
+                for pat in [r"(draft-[-a-z\d_.]+)", r"((?:RFC|rfc)\d+)"]:
+                    match = re.search(pat, ref_text)
+                    if match:
+                        found = True
+                        resolved[part].append((ref, match.group(0).lower()))
+                        break
+
+                if not found:
+                    urls = extract_urls(ref_text, True, True)
+                    resolved[part].append((ref, urls.pop() if urls else None))
+
+    resolved["text"] = refs["text"]
+    return resolved
+
+
+def duplicates(data: list) -> set:
+    """
+    Return duplicate elements in a list.
+
+    @param      data  The list to locate duplicates in.
+
+    @return     Duplicate elements of data.
+    """
+    seen = {}
+    dupes = set()
+    for item in data:
+        if item not in seen:
+            seen[item] = 1
+        else:
+            if seen[item] == 1:
+                dupes.add(item)
+            seen[item] += 1
+    return dupes.discard(None)
+
+
+def level_ok(part: str, level: str) -> bool:
+    if part.lower() == "normative":
+        return level.lower() in [
+            "best current practice",
+            "proposed standard",
+            "draft standard",
+            "internet standard",
+        ]
+    if part.lower() == "informative":
+        return True
+    die(f"unknown part {part}")
+
+
+def check_refs(datatracker: str, refs: dict, status: str) -> list:
+    result = []
+
+    # check for duplicates
+    for part in ["normative", "informative"]:
+        if not refs[part]:
+            continue
+        tags, tgts = zip(*refs[part])
+        dupes = duplicates(tags)
+        if dupes:
+            result.append(f"Duplicate {part} references: {', '.join(dupes)}")
+
+        dupes = duplicates(tgts)
+        if dupes:
+            tags = [t[0] for t in refs[part] if t[1] in dupes]
+            result.append(
+                f"Duplicate {part} references to: {', '.join(dupes)}"
+            )
+
+    norm = set(e[0] for e in refs["normative"])
+    info = set(e[0] for e in refs["informative"])
+    both = norm | info
+    text = set(refs["text"])
+
+    if norm & info:
+        result.append(
+            "Reference entries duplicated in both normative and "
+            f"informative sections: {', '.join(norm & info)}"
+        )
+
+    if both < text:
+        result.append(
+            f"No reference entries found for: {', '.join(text - both)}"
+        )
+    elif both > text:
+        result.append(f"Uncited references: {', '.join(both - text)}")
+
+    for part in ["normative", "informative"]:
+        for tag, doc in refs[part]:
+            meta = None
+            if doc:
+                doc = re.search(r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc)
+                if doc:
+                    groups = list(doc.groups())
+                    doc = groups[1] if groups[1] else groups[0]
+                    doc = re.sub(r"rfc0*(\d+)", r"rfc\1", doc)
+                    url = datatracker + "/doc/" + doc + "/doc.json"
+                    meta = fetch_url(url)
+            if meta:
+                meta = json.loads(meta)
+                level = meta["std_level"] or meta["intended_std_level"]
+                if not level_ok(part, level):
+                    result.append(
+                        f"DOWNREF from this {status} doc to {level} {tag}"
+                    )
+            else:
+                logging.debug(
+                    "No metadata available for %s reference %s", part, tag
+                )
+
+    return result
+
+
+def get_status(doc: str) -> str:
+    status = re.search(
+        r"^(?:[Ii]ntended )?[Ss]tatus:\s*((?:\w+\s)+)",
+        doc,
+        re.MULTILINE,
+    )
+    return status.group(1).strip() if status else None
+
+
 @click.command("review", help="Extract review from named items.")
 @click.argument("items", nargs=-1)
 @click.option(
@@ -810,8 +990,16 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
     default=True,
     help="Check if URLs resolve.",
 )
+@click.option(
+    "--check_downrefs/--no-check_downrefs",
+    "check_downrefs",
+    default=True,
+    help="Check if the draft has DOWNREFs.",
+)
 @click.pass_obj
-def review_items(state: object, items: list, check_urls: bool) -> None:
+def review_items(
+    state: object, items: list, check_urls: bool, check_downrefs: bool
+) -> None:
     """
     Extract reviews from named items.
 
@@ -850,23 +1038,30 @@ def review_items(state: object, items: list, check_urls: bool) -> None:
             rev = read(item).splitlines(keepends=True)
             review = review_item(orig.splitlines(keepends=True), rev)
 
+            if check_downrefs:
+                refs = extract_refs(orig)
+                result = check_refs(state.datatracker, refs, get_status(orig))
+                if result:
+                    review["nit"].append(
+                        "These reference issues exist in the document:\n",
+                    )
+                    review["nit"].extend(f" * {line}\n" for line in result)
+                    review["nit"].append("\n")
+
             if check_urls:
                 result = []
                 urls = extract_urls(orig)
-                texts = {u: fetch_url(u, "HEAD") for u in urls}
+                reachability = {u: fetch_url(u, "HEAD") for u in urls}
                 for url in urls:
-                    if texts[url] is None:
-                        result.append(f" * {url}\n")
+                    if reachability[url] is None:
+                        result.append(url)
 
                 if result:
-                    result.insert(
-                        0,
-                        (
-                            "The following URLs in the document "
-                            "failed to return content:\n"
-                        ),
+                    review["nit"].append(
+                        "These URLs in the document did not return content:\n",
                     )
-                    review["nit"].extend(result)
+                    review["nit"].extend(f" * {line}\n" for line in result)
+                    review["nit"].append("\n")
 
             fmt_review(review)
 
