@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 """
 Review tool for IETF documents.
 
@@ -75,6 +77,7 @@ def cli(ctx, datatracker: str, verbose: bool) -> None:
         )
     else:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.getLogger("requests_cache").setLevel(logging.WARNING)
 
     cache = appdirs.user_cache_dir("ietf-reviewtool")
     if not os.path.isdir(cache):
@@ -91,7 +94,7 @@ def die(msg: list, err: int = 1) -> None:
     """
     Print a message and exit with an error code.
 
-    @param      msg   The message to print.
+    @param      msg   The message to print
 
     @return
     """
@@ -99,26 +102,25 @@ def die(msg: list, err: int = 1) -> None:
     sys.exit(err)
 
 
-def fetch_url(url: str, method: str = "GET") -> str:
+def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
     """
     Fetches the resource at the given URL or checks its reachability (when
     method is "HEAD".) In the latter case, the cache is also disabled.
 
-    @param      url     The URL to fetch
-    @param      method  The method to use (default "GET").
+    @param      url        The URL to fetch
+    @param      use_cache  Whether to use the local cache or not
+    @param      method     The method to use (default "GET")
 
     @return     The decoded content of the resource (or the empty string for a
                 successful HEAD request). None if an error occurred.
     """
     try:
         logging.debug("%s %s", method.lower(), url)
-        if method == "GET":
-            response = requests.get(url, allow_redirects=True)
-        elif method == "HEAD":
+        if use_cache is False:
             with requests_cache.disabled():
-                response = requests.head(url, allow_redirects=True)
+                response = requests.request(method, url, allow_redirects=True)
         else:
-            die(f"unknown method {method}")
+            response = requests.request(method, url, allow_redirects=True)
         response.raise_for_status()
     except requests.exceptions.RequestException as err:
         logging.error("%s -> %s", url, err)
@@ -130,7 +132,7 @@ def read(file_name: str) -> str:
     """
     Read a file into a string.
 
-    @param      file_name  The item to read.
+    @param      file_name  The item to read
 
     @return     The content of the item.
     """
@@ -148,8 +150,8 @@ def write(text: str, file_name: str) -> None:
     """
     Write a string into a file.
 
-    @param      text       The text to write.
-    @param      file_name  The file name to write to.
+    @param      text       The text to write
+    @param      file_name  The file name to write to
 
     @return     -
     """
@@ -163,7 +165,7 @@ def unfold(text: str) -> str:
     """
     Unfolds the paragraphs (i.e., removes hard line ends) in a text string.
 
-    @param      text  The text to unfold.
+    @param      text  The text to unfold
 
     @return     The unfolded version of the text.
     """
@@ -181,9 +183,9 @@ def extract_urls(
     """
     Return a list of URLs in a text string.
 
-    @param      text      The text to extract URLs from.
-    @param      examples  Include example URLs.
-    @param      common    Include URLs that are common in IETF documents.
+    @param      text      The text to extract URLs from
+    @param      examples  Include example URLs
+    @param      common    Include URLs that are common in IETF documents
 
     @return     List of URLs.
     """
@@ -235,7 +237,9 @@ def get_current_agenda(datatracker: str) -> dict:
 
     @return     The current agenda as a dict.
     """
-    agenda = fetch_url(datatracker + "/iesg/agenda/agenda.json")
+    agenda = fetch_url(
+        datatracker + "/iesg/agenda/agenda.json", use_cache=False
+    )
     if agenda is None:
         return {}
     return json.loads(agenda)
@@ -246,7 +250,7 @@ def get_items_on_agenda(agenda: dict) -> list:
     Given an IESG telechat agenda dict, return the list of items that are on
     it.
 
-    @param      agenda  An agenda dict.
+    @param      agenda  An agenda dict
 
     @return     A list of the items on the given agenda.
     """
@@ -266,7 +270,7 @@ def strip_pagination(text: str) -> str:
     rfcstrip tool (https://trac.tools.ietf.org/tools/rfcstrip/) from which the
     regexs used below were originally adopted.
 
-    @param      text  The text of an RFC or Internet-Draft.
+    @param      text  The text of an RFC or Internet-Draft
 
     @return     The stripped version of the text.
     """
@@ -283,7 +287,7 @@ def strip_pagination(text: str) -> str:
         if (
             re.search(r"^\s*\f", mod)
             or (
-                num > 0
+                num > 10
                 and re.search(
                     r"^\s*I(nternet|NTERNET).D(raft|RAFT)\s{3,}.*$",
                     mod,
@@ -416,7 +420,7 @@ def get_items(
     Does not overwrite existing files. Names need to include the revision, and
     may or may not include the ".txt" suffix.
 
-    @param      items        The items to download.
+    @param      items        The items to download
     @param      datatracker  The datatracker URL to use
     @param      strip        Whether to run strip() on the downloaded item
     @param      get_writeup  Whether to download associated write-ups
@@ -494,7 +498,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
     """
     Run strip_pagination over the named items.
 
-    @param      items     The items to strip.
+    @param      items     The items to strip
     @param      in_place  Whether to overwrite the item, or save a ".stripped"
                           copy.
 
@@ -525,9 +529,9 @@ def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
     based on the next and current lines of text and the current paragraph
     number and section title list.
 
-    @param      nxt       The next line in the diff.
+    @param      nxt       The next line in the diff
     @param      cur       The current line in the diff
-    @param      para_sec  The current (paragraph number, section name) list.
+    @param      para_sec  The current (paragraph number, section name) list
 
     @return     An updated (paragraph number, section name) list.
     """
@@ -564,8 +568,8 @@ def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
     Return a formatted prefix line indicating the current section name,
     paragraph number, and category.
 
-    @param      para_sec  The current (paragraph number, section name) list.
-    @param      cat       The category to indicate.
+    @param      para_sec  The current (paragraph number, section name) list
+    @param      cat       The category to indicate
 
     @return     A formatted prefix line.
     """
@@ -578,9 +582,9 @@ def fmt_nit(changed: list, indicator: list, para_sec: list) -> list:
     """
     Format a nit.
 
-    @param      changed    Changed lines.
-    @param      indicator  Indicator lines.
-    @param      para_sec   The current (paragraph number, section name) list.
+    @param      changed    Changed lines
+    @param      indicator  Indicator lines
+    @param      para_sec   The current (paragraph number, section name) list
 
     @return     The formatted nit.
     """
@@ -601,7 +605,7 @@ def gather_nits(diff: list) -> list:
     """
     Return a list of prefixed nits from the current diff.
 
-    @param      diff  The diff to extract nits from.
+    @param      diff  The diff to extract nits from
 
     @return     A list of prefixed nits.
     """
@@ -653,7 +657,7 @@ def strip_nits_from_diff(diff: list) -> list:
     """
     Return a version of the passed diff with all lines related to nits removed.
 
-    @param      diff  The diff to strip nits from.
+    @param      diff  The diff to strip nits from
 
     @return     A diff with all nits removed.
     """
@@ -700,8 +704,8 @@ def fmt_comment(item: dict, para_sec: list) -> list:
     """
     Format a comment.
 
-    @param      item      The comment item dict.
-    @param      para_sec  The current (paragraph number, section name) list.
+    @param      item      The comment item dict
+    @param      para_sec  The current (paragraph number, section name) list
 
     @return     The formatted comment.
     """
@@ -722,7 +726,7 @@ def gather_comments(diff: list) -> dict:
     """
     Return a dict that contains lists of all comments of all categories.
 
-    @param      diff  A diff with nits removed (by strip_nits_from_diff).
+    @param      diff  A diff with nits removed (by strip_nits_from_diff)
 
     @return     A review dict.
     """
@@ -773,8 +777,8 @@ def review_item(orig: list, rev: list) -> dict:
     """
     Calculates a diff between orig and rev..
 
-    @param      orig  The original text.
-    @param      rev   The revised text.
+    @param      orig  The original text
+    @param      rev   The revised text
 
     @return     A diff between orig and rev.
     """
@@ -786,12 +790,9 @@ def review_item(orig: list, rev: list) -> dict:
         rev.append("\n")
 
     diff = list(difflib.ndiff(orig, rev, linejunk=None, charjunk=None))
-    # print("diff ", diff)
 
     nits = gather_nits(diff)
-    # print("nits ", nits)
     diff = strip_nits_from_diff(diff)
-    # print("stripped ", diff)
     review = gather_comments(diff)
     review["nit"].extend(nits)
     return review
@@ -801,8 +802,8 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
     """
     Format a review dict for datatracker submission.
 
-    @param      review  The review to format.
-    @param      ruler   The column number to wrap the review to.
+    @param      review  The review to format
+    @param      ruler   The column number to wrap the review to
 
     @return     Wrapped text version of the review.
     """
@@ -834,7 +835,7 @@ def extract_refs(text: list) -> dict:
     Return a dict of references found in the text as well as the normative and
     informative reference sections.
 
-    @param      text  The text to parse for references.
+    @param      text  The text to parse for references
 
     @return     A dict with lists of found references.
     """
@@ -869,8 +870,9 @@ def extract_refs(text: list) -> dict:
         resolved[part] = []
         for ref in refs[part]:
             ref_text = re.search(
-                r"\s*" + re.escape(ref) + r"\s+(?s)((?:[^\n][\n]?)+)\n",
+                r"\s*" + re.escape(ref) + r"\s+((?:[^\n][\n]?)+)\n",
                 parts[part],
+                re.DOTALL,
             )
             if ref_text:
                 ref_text = unfold(ref_text.group(0))
@@ -895,7 +897,7 @@ def duplicates(data: list) -> set:
     """
     Return duplicate elements in a list.
 
-    @param      data  The list to locate duplicates in.
+    @param      data  The list to locate duplicates in
 
     @return     Duplicate elements of data.
     """
@@ -917,12 +919,12 @@ def level_ok(kind: str, level: str) -> bool:
     document at a given standards level.
 
     @param      kind   The kind of reference (normative or informative.)
-    @param      level  The status level of the reference.
+    @param      level  The status level of the reference
 
     @return     False if this is a DOWNREF, True otherwise.
     """
     if kind.lower() == "normative":
-        return level.lower() in [
+        return level is not None and level.lower() in [
             "best current practice",
             "proposed standard",
             "draft standard",
@@ -1010,17 +1012,23 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
                     doc = re.sub(r"rfc0*(\d+)", r"rfc\1", doc)
                     url = datatracker + "/doc/" + doc + "/doc.json"
                     meta = fetch_url(url)
+            level = None
             if meta:
                 meta = json.loads(meta)
                 level = meta["std_level"] or meta["intended_std_level"]
-                if not level_ok(kind, level) and doc not in downrefs:
+            else:
+                logging.info(
+                    "No metadata available for %s reference %s", kind, tag
+                )
+            if not level_ok(kind, level) and doc not in downrefs:
+                if level is None:
+                    result.append(
+                        f"Possible DOWNREF from this {status} doc to {tag}"
+                    )
+                else:
                     result.append(
                         f"DOWNREF from this {status} doc to {level} {tag}"
                     )
-            else:
-                logging.debug(
-                    "No metadata available for %s reference %s", kind, tag
-                )
 
     return result
 
@@ -1029,7 +1037,7 @@ def get_status(doc: str) -> str:
     """
     Extract the standards level status of a given document..
 
-    @param      doc   The document to extract the level from.
+    @param      doc   The document to extract the level from
 
     @return     The status of the document..
     """
@@ -1062,9 +1070,9 @@ def review_items(
     """
     Extract reviews from named items.
 
-    @param      items        The items to extract reviews from.
+    @param      items        The items to extract reviews from
     @param      datatracker  The datatracker URL to use
-    @param      check_urls   Whether to check URLs for reachability.
+    @param      check_urls   Whether to check URLs for reachability
 
     @return     -
     """
@@ -1174,7 +1182,6 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
         "Downloading ballot items from %s IESG agenda",
         agenda["telechat-date"],
     )
-    print(items)
     get_items(items, state.datatracker, strip, fetch_writeups)
     if mkdir:
         os.chdir(current_directory)
@@ -1184,3 +1191,6 @@ cli.add_command(fetch_agenda)
 cli.add_command(fetch)
 cli.add_command(strip_items)
 cli.add_command(review_items)
+
+if __name__ == "__main__":
+    cli()
