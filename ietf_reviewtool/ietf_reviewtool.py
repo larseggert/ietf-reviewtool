@@ -160,6 +160,13 @@ def write(text: str, file_name: str) -> None:
 
 
 def unfold(text: str) -> str:
+    """
+    Unfolds the paragraphs (i.e., removes hard line ends) in a text string.
+
+    @param      text  The text to unfold.
+
+    @return     The unfolded version of the text.
+    """
     rand = r"bYYO2hxg2Bg4HhwEsbJQSSucukxfAbAIcDrPu5dw"
     text = re.sub(r"\n{2,}", rand, text, flags=re.MULTILINE)
     text = re.sub(r"^\s*", r"", text, flags=re.MULTILINE)
@@ -791,7 +798,14 @@ def review_item(orig: list, rev: list) -> dict:
 
 
 def fmt_review(review: dict, ruler: int = 79) -> None:
-    """Format a review dict for datatracker submission."""
+    """
+    Format a review dict for datatracker submission.
+
+    @param      review  The review to format.
+    @param      ruler   The column number to wrap the review to.
+
+    @return     Wrapped text version of the review.
+    """
     boilerplate = {
         "discuss": None,
         "comment": None,
@@ -897,36 +911,74 @@ def duplicates(data: list) -> set:
     return dupes.discard(None)
 
 
-def level_ok(part: str, level: str) -> bool:
-    if part.lower() == "normative":
+def level_ok(kind: str, level: str) -> bool:
+    """
+    Check if a document reference is allowed (i.e., is not a DOWNREF) for a
+    document at a given standards level.
+
+    @param      kind   The kind of reference (normative or informative.)
+    @param      level  The status level of the reference.
+
+    @return     False if this is a DOWNREF, True otherwise.
+    """
+    if kind.lower() == "normative":
         return level.lower() in [
             "best current practice",
             "proposed standard",
             "draft standard",
             "internet standard",
         ]
-    if part.lower() == "informative":
+    if kind.lower() == "informative":
         return True
-    die(f"unknown part {part}")
+    die(f"unknown kind {kind}")
+
+
+def fetch_downrefs(datatracker: str) -> list:
+    """
+    Fetches DOWNREFs from datatracker and returns them as a list.
+
+    @param      datatracker  The datatracker URL to use
+
+    @return     A list of RFC names.
+    """
+    url = (
+        datatracker + "/api/v1/doc/relateddocument/?format=json&relationship="
+        "downref-approval&limit=0"
+    )
+    downrefs = json.loads(fetch_url(url))
+    return [
+        re.sub(r".*(rfc\d+).*", r"\1", d["target"])
+        for d in downrefs["objects"]
+    ]
 
 
 def check_refs(datatracker: str, refs: dict, status: str) -> list:
+    """
+    Check the references.
+
+    @param      datatracker  The datatracker URL to use
+    @param      refs         The references to check
+    @param      status       The standards level of the given document
+
+    @return     List of messages.
+    """
     result = []
+    downrefs = fetch_downrefs(datatracker)
 
     # check for duplicates
-    for part in ["normative", "informative"]:
-        if not refs[part]:
+    for kind in ["normative", "informative"]:
+        if not refs[kind]:
             continue
-        tags, tgts = zip(*refs[part])
+        tags, tgts = zip(*refs[kind])
         dupes = duplicates(tags)
         if dupes:
-            result.append(f"Duplicate {part} references: {', '.join(dupes)}")
+            result.append(f"Duplicate {kind} references: {', '.join(dupes)}")
 
         dupes = duplicates(tgts)
         if dupes:
-            tags = [t[0] for t in refs[part] if t[1] in dupes]
+            tags = [t[0] for t in refs[kind] if t[1] in dupes]
             result.append(
-                f"Duplicate {part} references to: {', '.join(dupes)}"
+                f"Duplicate {kind} references to: {', '.join(dupes)}"
             )
 
     norm = set(e[0] for e in refs["normative"])
@@ -947,8 +999,8 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
     elif both > text:
         result.append(f"Uncited references: {', '.join(both - text)}")
 
-    for part in ["normative", "informative"]:
-        for tag, doc in refs[part]:
+    for kind in ["normative", "informative"]:
+        for tag, doc in refs[kind]:
             meta = None
             if doc:
                 doc = re.search(r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc)
@@ -961,19 +1013,26 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
             if meta:
                 meta = json.loads(meta)
                 level = meta["std_level"] or meta["intended_std_level"]
-                if not level_ok(part, level):
+                if not level_ok(kind, level) and doc not in downrefs:
                     result.append(
                         f"DOWNREF from this {status} doc to {level} {tag}"
                     )
             else:
                 logging.debug(
-                    "No metadata available for %s reference %s", part, tag
+                    "No metadata available for %s reference %s", kind, tag
                 )
 
     return result
 
 
 def get_status(doc: str) -> str:
+    """
+    Extract the standards level status of a given document..
+
+    @param      doc   The document to extract the level from.
+
+    @return     The status of the document..
+    """
     status = re.search(
         r"^(?:[Ii]ntended )?[Ss]tatus:\s*((?:\w+\s)+)",
         doc,
