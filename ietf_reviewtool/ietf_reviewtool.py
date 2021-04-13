@@ -1054,7 +1054,8 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
                 if not level_ok(kind, level) and docname not in downrefs:
                     if level is None:
                         result.append(
-                            f"Possible DOWNREF from this {status} doc to {ntag}"
+                            f"Possible DOWNREF from this {status} doc "
+                            f"to {ntag}"
                         )
                     else:
                         result.append(
