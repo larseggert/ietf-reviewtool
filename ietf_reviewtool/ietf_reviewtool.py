@@ -78,6 +78,7 @@ def cli(ctx, datatracker: str, verbose: bool) -> None:
     else:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("requests_cache").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     cache = appdirs.user_cache_dir("ietf-reviewtool")
     if not os.path.isdir(cache):
@@ -115,7 +116,9 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
                 successful HEAD request). None if an error occurred.
     """
     try:
-        logging.debug("%s %s", method.lower(), url)
+        logging.debug(
+            "%s %scache %s", method.lower(), "no" if not use_cache else "", url
+        )
         if use_cache is False:
             with requests_cache.disabled():
                 response = requests.request(method, url, allow_redirects=True)
@@ -341,6 +344,29 @@ def basename(item: str) -> str:
     return re.sub(r"^(?:.*/)?(.*[^-\d]+)(-\d+)+(?:\.txt)?$", r"\1", item)
 
 
+def fetch_dt(datatracker: str, query: str) -> dict:
+    """
+    Return dict of JSON query results from datatracker.
+
+    @param      datatracker  The datatracker URL to use
+    @param      query        The query to return data for
+
+    @return     The query results.
+    """
+    api = "/api/v1/doc/"
+    if not query.startswith(api):
+        query = api + query
+    if re.search(r"\?", query):
+        query += "&format=json"
+    else:
+        query += "?format=json"
+    content = fetch_url(datatracker + query)
+    if content is not None:
+        result = json.loads(content)
+        return result["objects"] if "objects" in result else result
+    return None
+
+
 def get_writeups(datatracker: str, item: str) -> str:
     """
     Download related document writeups for an item from the datatracker.
@@ -351,44 +377,42 @@ def get_writeups(datatracker: str, item: str) -> str:
     @return     The text of the writeup, if only a single one existed, else
                 None.
     """
-    url = (
-        datatracker
-        + "/api/v1/doc/writeupdocevent/?format=json&doc__name="
-        + basename(item)
+    doc_events = fetch_dt(
+        datatracker, "writeupdocevent/?doc__name=" + basename(item)
     )
-    doc_events = fetch_url(url)
-    if doc_events is not None:
-        doc_events = json.loads(doc_events)["objects"]
-        events = {
-            e["type"]
-            for e in doc_events
-            if e["type"]
-            not in [
-                "changed_ballot_approval_text",
-                "changed_action_announcement",
-                "changed_review_announcement",
-            ]
-        }
-        if events:
-            logging.debug(events)
-        for evt in events:
-            type_events = [e for e in doc_events if e["type"] == evt]
-            type_events.sort(
-                key=lambda k: datetime.datetime.fromisoformat(k["time"]),
-                reverse=True,
-            )
-            text = type_events[0]["text"]
+    if not doc_events:
+        return None
 
-            directory = re.sub(r"^(?:changed_)?(.*)?", r"\1", evt)
-            if not os.path.isdir(directory):
-                os.mkdir(directory)
+    events = {
+        e["type"]
+        for e in doc_events
+        if e["type"]
+        not in [
+            "changed_ballot_approval_text",
+            "changed_action_announcement",
+            "changed_review_announcement",
+        ]
+    }
+    if events:
+        logging.debug(events)
+    for evt in events:
+        type_events = [e for e in doc_events if e["type"] == evt]
+        type_events.sort(
+            key=lambda k: datetime.datetime.fromisoformat(k["time"]),
+            reverse=True,
+        )
+        text = type_events[0]["text"]
 
-            if text:
-                write(text, os.path.join(directory, item + ".txt"))
-            else:
-                logging.debug("no %s for %s", evt, item)
+        directory = re.sub(r"^(?:changed_)?(.*)?", r"\1", evt)
+        if not os.path.isdir(directory):
+            os.mkdir(directory)
 
-        return text if len(events) == 1 else None
+        if text:
+            write(text, os.path.join(directory, item + ".txt"))
+        else:
+            logging.debug("no %s for %s", evt, item)
+
+    return text if len(events) == 1 else None
 
 
 @click.command("fetch", help="Download items (I-Ds, charters, RFCs, etc.)")
@@ -943,15 +967,14 @@ def fetch_downrefs(datatracker: str) -> list:
 
     @return     A list of RFC names.
     """
-    url = (
-        datatracker + "/api/v1/doc/relateddocument/?format=json&relationship="
-        "downref-approval&limit=0"
+    downrefs = fetch_dt(
+        datatracker, "relateddocument/?relationship=downref-approval&limit=0"
     )
-    downrefs = json.loads(fetch_url(url))
-    return [
-        re.sub(r".*(rfc\d+).*", r"\1", d["target"])
-        for d in downrefs["objects"]
-    ]
+    return [re.sub(r".*(rfc\d+).*", r"\1", d["target"]) for d in downrefs]
+
+
+def untag(tag: str) -> str:
+    return re.sub(r"^\[(.*)\]$", r"\1", tag)
 
 
 def check_refs(datatracker: str, refs: dict, status: str) -> list:
@@ -1003,32 +1026,58 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
 
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
-            meta = None
-            if doc:
-                doc = re.search(r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc)
-                if doc:
-                    groups = list(doc.groups())
-                    doc = groups[1] if groups[1] else groups[0]
-                    doc = re.sub(r"rfc0*(\d+)", r"rfc\1", doc)
-                    url = datatracker + "/doc/" + doc + "/doc.json"
-                    meta = fetch_url(url)
-            level = None
-            if meta:
-                meta = json.loads(meta)
-                level = meta["std_level"] or meta["intended_std_level"]
-            else:
+            ntag = untag(tag)
+            docname = re.search(r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc)
+            if not docname:
                 logging.info(
                     "No metadata available for %s reference %s", kind, tag
                 )
-            if not level_ok(kind, level) and doc not in downrefs:
-                if level is None:
-                    result.append(
-                        f"Possible DOWNREF from this {status} doc to {tag}"
+                continue
+
+            groups = list(docname.groups())
+            docname = groups[1] if groups[1] else groups[0]
+            docname = re.sub(r"rfc0*(\d+)", r"rfc\1", docname)
+
+            if status.lower() not in ["informational", "experimental"]:
+                url = datatracker + "/doc/" + docname + "/doc.json"
+                meta = fetch_url(url)
+
+                if not meta:
+                    logging.info(
+                        "No metadata available for %s reference %s", kind, tag
+                    )
+                    continue
+
+                meta = json.loads(meta)
+                level = meta["std_level"] or meta["intended_std_level"]
+
+                if not level_ok(kind, level) and docname not in downrefs:
+                    if level is None:
+                        result.append(
+                            f"Possible DOWNREF from this {status} doc to {ntag}"
+                        )
+                    else:
+                        result.append(
+                            f"DOWNREF from this {status} doc to {level} {ntag}"
+                        )
+
+            obsoleted_by = fetch_dt(
+                datatracker,
+                "relateddocument/?relationship__slug=obs&target__name="
+                + docname,
+            )
+            if obsoleted_by:
+                if len(obsoleted_by) > 1:
+                    logging.warning(
+                        f"{docname} obsoleted by more than one doc"
                     )
                 else:
-                    result.append(
-                        f"DOWNREF from this {status} doc to {level} {tag}"
-                    )
+                    obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
+                    if "rfc" in obs_by:
+                        result.append(
+                            f"Obsolete reference to {ntag}, "
+                            f"obsoleted by RFC{obs_by['rfc']}"
+                        )
 
     return result
 
@@ -1118,7 +1167,9 @@ def review_items(
             if check_urls:
                 result = []
                 urls = extract_urls(orig)
-                reachability = {u: fetch_url(u, "HEAD") for u in urls}
+                reachability = {
+                    u: fetch_url(u, state.verbose > 0, "HEAD") for u in urls
+                }
                 for url in urls:
                     if reachability[url] is None:
                         result.append(url)
