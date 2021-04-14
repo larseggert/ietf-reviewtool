@@ -21,6 +21,11 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
+
+# TODO:
+# * add XML validation
+# * add grammar check
+
 import datetime
 import difflib
 import json
@@ -1027,8 +1032,11 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
             ntag = untag(tag)
-            docname = re.search(r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc)
-            if not docname:
+            if doc:
+                docname = re.search(
+                    r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc
+                )
+            if not doc or not docname:
                 logging.info(
                     "No metadata available for %s reference %s", kind, tag
                 )
