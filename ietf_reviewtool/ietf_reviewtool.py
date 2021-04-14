@@ -39,7 +39,7 @@ import requests_cache
 
 
 SECTION_PATTERN = re.compile(
-    r"""^(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
+    r"""^(?:[\- ]\s)?(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
         Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
         (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?|
         \d+(?:\.\d+)*\.?)(.*)""",
