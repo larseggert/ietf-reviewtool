@@ -21,11 +21,6 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
-
-# TODO:
-# * add XML validation
-# * add grammar check
-
 import datetime
 import difflib
 import json
@@ -36,6 +31,7 @@ import sys
 import tempfile
 import textwrap
 import urllib.parse
+import xml.etree.ElementTree
 
 import appdirs
 import click
@@ -1078,7 +1074,7 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
             if obsoleted_by:
                 if len(obsoleted_by) > 1:
                     logging.warning(
-                        f"{docname} obsoleted by more than one doc"
+                        "%s obsoleted by more than one doc", docname
                     )
                 else:
                     obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
@@ -1105,6 +1101,33 @@ def get_status(doc: str) -> str:
         re.MULTILINE,
     )
     return status.group(1).strip() if status else None
+
+
+def check_xml(doc: str) -> None:
+    snippets = re.finditer(r"^(.*)<\?xml\s", doc, re.MULTILINE)
+    for snip in snippets:
+        start = re.search(r"<\s*(\w+)", doc[snip.start() :])
+        if not start:
+            logging.warning("cannot find an XML start tag")
+            continue
+
+        end = re.search(
+            r"</\s*" + re.escape(start.group(1)) + r"\s*>", doc[snip.start() :]
+        )
+        if not end:
+            logging.warning('cannot find XML end tag "%s"', start.group(1))
+            continue
+
+        text = doc[snip.start() : snip.start() + end.end()]
+        if snip.group(1):
+            prefix = snip.group(1)
+            # logging.debug('XML prefix "%s"', prefix)
+            text = re.sub(
+                r"^" + re.escape(prefix), r"", text, flags=re.MULTILINE
+            )
+
+        # TODO: reflect XML error in review (once there is a test case)
+        xml.etree.ElementTree.fromstring(text)
 
 
 @click.command("review", help="Extract review from named items.")
@@ -1162,6 +1185,8 @@ def review_items(
             os.chdir(current_directory)
             rev = read(item).splitlines(keepends=True)
             review = review_item(orig.splitlines(keepends=True), rev)
+
+            check_xml(orig)
 
             if check_downrefs:
                 refs = extract_refs(orig)
