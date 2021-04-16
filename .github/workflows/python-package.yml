@@ -30,4 +30,4 @@ jobs:
         black -l 79 --check .
     - name: Lint with flake8
       run: |
-        flake8 . --count --show-source --statistics
+        flake8 . --count --show-source --statistics --extend-ignore E203
