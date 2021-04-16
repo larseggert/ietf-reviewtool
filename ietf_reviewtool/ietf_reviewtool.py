@@ -35,6 +35,7 @@ import xml.etree.ElementTree
 
 import appdirs
 import click
+import language_tool_python
 import requests
 import requests_cache
 
@@ -174,11 +175,15 @@ def unfold(text: str) -> str:
     @return     The unfolded version of the text.
     """
     rand = r"bYYO2hxg2Bg4HhwEsbJQSSucukxfAbAIcDrPu5dw"
-    text = re.sub(r"\n{2,}", rand, text, flags=re.MULTILINE)
-    text = re.sub(r"^\s*", r"", text, flags=re.MULTILINE)
-    text = re.sub(r"[\n\r]+", r"", text, flags=re.MULTILINE)
-    text = re.sub(rand, r"\n", text, flags=re.MULTILINE)
-    return text
+
+    folded = re.sub(r"[\r\f]", r"", text)
+    folded = re.sub(r"\n{2,}\s*", rand, folded)
+    folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
+    folded = re.sub(r"([\-/])\n", r"\1", folded)
+    folded = re.sub(r"\n", r" ", folded)
+    folded = re.sub(rand, r"\n\n", folded)
+
+    return folded
 
 
 def extract_urls(
@@ -342,7 +347,7 @@ def basename(item: str) -> str:
 
     @return     The base name of the item
     """
-    return re.sub(r"^(?:.*/)?(.*[^-\d]+)(-\d+)+(?:\.txt)?$", r"\1", item)
+    return re.sub(r"^(?:.*/)?(.*[^-]+)(-\d+)+(?:\.txt)?$", r"\1", item)
 
 
 def fetch_dt(datatracker: str, query: str) -> dict:
@@ -548,7 +553,9 @@ def strip_items(items: list, in_place: bool = False) -> None:
             write(text, item)
 
 
-def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
+def section_and_paragraph(
+    nxt: str, cur: str, para_sec: list, is_diff: bool = True
+) -> list:
     """
     Return a list consisting of the current paragraph number and section title,
     based on the next and current lines of text and the current paragraph
@@ -565,12 +572,14 @@ def section_and_paragraph(nxt: str, cur: str, para_sec: list) -> list:
     )
 
     # track paragraphs
-    if re.search(r"^[\- ] +$", cur):
+    pat = {True: r"^[\- ] +$", False: r"^ *$"}
+    if re.search(pat[is_diff], cur):
         para += 1
 
     # track sections
     pot_sec = SECTION_PATTERN.search(cur)
-    if pot_sec and re.search(r"^([\- ] +$|\+ )", nxt):
+    pat = {True: r"^([\- ] +$|\+ )", False: r"^( *$)"}
+    if pot_sec and re.search(pat[is_diff], nxt):
         pot_sec = pot_sec.group(1)
         if re.match(r"\d", pot_sec):
             if had_nn:
@@ -836,7 +845,7 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
         "discuss": None,
         "comment": None,
         "nit": (
-            "All comments below are very minor change suggestions "
+            "All comments below are very minor suggestions "
             "that you may choose to incorporate in some way (or ignore), "
             "as you see fit. There is no need to let me know what you did "
             "with these suggestions."
@@ -885,7 +894,9 @@ def extract_refs(text: list) -> dict:
     refs = {}
     for part in parts:
         refs[part] = re.findall(
-            r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\])",
+            r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\]"
+            + (r"|RFC\d+|draft-[-a-z\d_.]+" if part == "text" else r"")
+            + r")",
             parts[part],
             re.IGNORECASE,
         )
@@ -978,18 +989,22 @@ def untag(tag: str) -> str:
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
 
 
-def check_refs(datatracker: str, refs: dict, status: str) -> list:
+def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
     """
     Check the references.
 
     @param      datatracker  The datatracker URL to use
     @param      refs         The references to check
+    @param      name         The name of this document.
     @param      status       The standards level of the given document
 
     @return     List of messages.
     """
     result = []
     downrefs = fetch_downrefs(datatracker)
+
+    # remove self-mentions from extracted references in the text
+    refs["text"] = [r for r in refs["text"] if not untag(r).startswith(name)]
 
     # check for duplicates
     for kind in ["normative", "informative"]:
@@ -1010,7 +1025,7 @@ def check_refs(datatracker: str, refs: dict, status: str) -> list:
     norm = set(e[0] for e in refs["normative"])
     info = set(e[0] for e in refs["informative"])
     both = norm | info
-    text = set(refs["text"])
+    text = {"[" + r + "]" for r in {untag(r) for r in refs["text"]}}
 
     if norm & info:
         result.append(
@@ -1130,6 +1145,66 @@ def check_xml(doc: str) -> None:
         xml.etree.ElementTree.fromstring(text)
 
 
+def check_grammar(review: str) -> list:
+    issues = [
+        i
+        for i in language_tool_python.LanguageTool("en").check("".join(review))
+        if i.ruleId
+        not in [
+            "ARROWS",
+            "COMMA_PARENTHESIS_WHITESPACE",
+            "COPYRIGHT",
+            "CURRENCY",
+            "DASH_RULE",
+            "EN_QUOTES",
+            "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
+            "KEY_WORDS",
+            "MULTIPLICATION_SIGN",
+            "PLUS_MINUS",
+            "PUNCTUATION_PARAGRAPH_END",
+            "RETURN_IN_THE",
+            "UPPERCASE_SENTENCE_START",
+            "WHITESPACE_RULE",
+            "WORD_CONTAINS_UNDERSCORE",
+        ]
+    ]
+
+    para_sec = None
+    cur = 0
+    pos = 0
+    result = []
+    for issue in issues:
+        while pos + len(review[cur + 1]) < issue.offset:
+            para_sec = section_and_paragraph(
+                review[cur + 1], review[cur], para_sec, is_diff=False
+            )
+            pos += len(review[cur])
+            cur += 1
+
+        result.append(fmt_section_and_paragraph(para_sec, "nit"))
+        context = issue.context.lstrip(".")
+        offset = issue.offsetInContext - (len(issue.context) - len(context))
+        context = context.rstrip(".")
+
+        compressed = re.sub(r"\s+", r" ", context[0:offset])
+        offset -= len(context[0:offset]) - len(compressed)
+        context = re.sub(r"\s+", r" ", context)
+
+        result.append("> " + context + "\n")
+        result.append("> " + " " * offset + "^" * issue.errorLength + "\n")
+
+        message = (
+            issue.message.replace("“", '"')
+            .replace("”", '"')
+            .replace("‘", "'")
+            .replace("’", "'")
+        )
+
+        result.append(textwrap.fill(f"{message}", width=79) + "\n\n")
+
+    return result
+
+
 @click.command("review", help="Extract review from named items.")
 @click.argument("items", nargs=-1)
 @click.option(
@@ -1187,10 +1262,13 @@ def review_items(
             review = review_item(orig.splitlines(keepends=True), rev)
 
             check_xml(orig)
+            review["nit"].extend(check_grammar(rev))
 
             if check_downrefs:
                 refs = extract_refs(orig)
-                result = check_refs(state.datatracker, refs, get_status(orig))
+                result = check_refs(
+                    state.datatracker, refs, basename(item), get_status(orig)
+                )
                 if result:
                     review["nit"].append(
                         "These reference issues exist in the document:\n",
