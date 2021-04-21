@@ -39,6 +39,8 @@ import language_tool_python
 import requests
 import requests_cache
 
+log = logging.getLogger(__name__)
+
 
 SECTION_PATTERN = re.compile(
     r"""^(?:[\- ]\s)?(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
@@ -72,20 +74,12 @@ class State:
 def cli(ctx: object, datatracker: str, verbose: int) -> None:
     datatracker = re.sub(r"/+$", "", datatracker)
     ctx.obj = State(datatracker, verbose)
-
-    if verbose > 0:
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(levelname)s: %(message)s"
-        )
-    else:
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-    logging.getLogger("requests_cache").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
 
     cache = appdirs.user_cache_dir("ietf-reviewtool")
     if not os.path.isdir(cache):
         os.mkdir(cache)
-    logging.debug("Using cache directory %s", cache)
+    log.debug("Using cache directory %s", cache)
     requests_cache.install_cache(
         cache_name=os.path.join(cache, "ietf-reviewtool"),
         backend="sqlite",
@@ -101,7 +95,7 @@ def die(msg: list, err: int = 1) -> None:
 
     @return
     """
-    logging.error(msg)
+    log.error(msg)
     sys.exit(err)
 
 
@@ -118,7 +112,7 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
                 successful HEAD request). None if an error occurred.
     """
     try:
-        logging.debug(
+        log.debug(
             "%s %scache %s", method.lower(), "no" if not use_cache else "", url
         )
         if use_cache is False:
@@ -128,7 +122,7 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
             response = requests.request(method, url, allow_redirects=True)
         response.raise_for_status()
     except requests.exceptions.RequestException as err:
-        logging.error("%s -> %s", url, err)
+        log.error("%s -> %s", url, err)
         return None
     return response.text
 
@@ -144,7 +138,7 @@ def read(file_name: str) -> str:
     try:
         file = open(file_name, "r")
     except FileNotFoundError as err:
-        logging.error("%s -> %s", file_name, err)
+        log.error("%s -> %s", file_name, err)
         return None
     text = file.read()
     file.close()
@@ -400,7 +394,7 @@ def get_writeups(datatracker: str, item: str) -> str:
         ]
     }
     if events:
-        logging.debug(events)
+        log.debug(events)
     for evt in events:
         type_events = [e for e in doc_events if e["type"] == evt]
         type_events.sort(
@@ -416,7 +410,7 @@ def get_writeups(datatracker: str, item: str) -> str:
         if text:
             write(text, os.path.join(directory, item + ".txt"))
         else:
-            logging.debug("no %s for %s", evt, item)
+            log.debug("no %s for %s", evt, item)
 
     return text if len(events) == 1 else None
 
@@ -457,7 +451,7 @@ def get_items(
 
     @return     -
     """
-    logging.debug(items)
+    log.debug(items)
     for item in items:
         file_name = item
         if not file_name.endswith(".txt"):
@@ -467,10 +461,10 @@ def get_items(
             get_writeups(datatracker, item)
 
         if os.path.isfile(file_name):
-            logging.warning("%s exists, skipping", file_name)
+            log.warning("%s exists, skipping", file_name)
             continue
 
-        logging.info("Getting %s", item)
+        log.info("Getting %s", item)
         cache = None
         text = None
         if item.startswith("draft-"):
@@ -499,17 +493,17 @@ def get_items(
         if cache is not None:
             cache_file = os.path.join(cache, file_name)
             if os.path.isfile(cache_file):
-                logging.debug("Using cached %s", item)
+                log.debug("Using cached %s", item)
                 text = read(cache_file)
             else:
-                logging.debug("No cached copy of %s in %s", item, cache)
+                log.debug("No cached copy of %s in %s", item, cache)
 
         if text is None:
             text = fetch_url(url)
 
         if text is not None:
             if strip:
-                logging.debug("Stripping %s", item)
+                log.debug("Stripping %s", item)
                 text = strip_pagination(text)
             write(text, file_name)
 
@@ -534,10 +528,10 @@ def strip_items(items: list, in_place: bool = False) -> None:
 
     @return     -
     """
-    logging.debug(items)
+    log.debug(items)
     for item in items:
         if not os.path.isfile(item):
-            logging.warning("%s does not exist, skipping", item)
+            log.warning("%s does not exist, skipping", item)
             continue
 
         text = strip_pagination(read(item))
@@ -546,10 +540,10 @@ def strip_items(items: list, in_place: bool = False) -> None:
             if not in_place:
                 item += ".stripped"
                 if os.path.isfile(item):
-                    logging.warning("%s exists, skipping", item)
+                    log.warning("%s exists, skipping", item)
                     continue
 
-            logging.debug("Saving stripped version as %s", item)
+            log.debug("Saving stripped version as %s", item)
             write(text, item)
 
 
@@ -1048,7 +1042,7 @@ def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
                     r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc
                 )
             if not doc or not docname:
-                logging.info(
+                log.info(
                     "No metadata available for %s reference %s", kind, tag
                 )
                 continue
@@ -1062,7 +1056,7 @@ def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
                 meta = fetch_url(url)
 
                 if not meta:
-                    logging.info(
+                    log.info(
                         "No metadata available for %s reference %s", kind, tag
                     )
                     continue
@@ -1088,9 +1082,7 @@ def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
             )
             if obsoleted_by:
                 if len(obsoleted_by) > 1:
-                    logging.warning(
-                        "%s obsoleted by more than one doc", docname
-                    )
+                    log.warning("%s obsoleted by more than one doc", docname)
                 else:
                     obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
                     if "rfc" in obs_by:
@@ -1123,20 +1115,20 @@ def check_xml(doc: str) -> None:
     for snip in snippets:
         start = re.search(r"<\s*(\w+)", doc[snip.start() :])
         if not start:
-            logging.warning("cannot find an XML start tag")
+            log.warning("cannot find an XML start tag")
             continue
 
         end = re.search(
             r"</\s*" + re.escape(start.group(1)) + r"\s*>", doc[snip.start() :]
         )
         if not end:
-            logging.warning('cannot find XML end tag "%s"', start.group(1))
+            log.warning('cannot find XML end tag "%s"', start.group(1))
             continue
 
         text = doc[snip.start() : snip.start() + end.end()]
         if snip.group(1):
             prefix = snip.group(1)
-            # logging.debug('XML prefix "%s"', prefix)
+            # log.debug('XML prefix "%s"', prefix)
             text = re.sub(
                 r"^" + re.escape(prefix), r"", text, flags=re.MULTILINE
             )
@@ -1232,21 +1224,21 @@ def review_items(
 
     @return     -
     """
-    logging.debug(items)
+    log.debug(items)
     current_directory = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
-        logging.debug("tmp dir %s", tmp)
+        log.debug("tmp dir %s", tmp)
         for item in items:
             if os.path.isdir(item):
                 for dir_item in os.listdir(item):
                     dir_item = os.path.join(item, dir_item)
                     if os.path.isfile(dir_item) and dir_item.endswith(".txt"):
                         items.append(dir_item)
-                logging.debug(items)
+                log.debug(items)
                 continue
 
             if not os.path.isfile(item):
-                logging.warning("%s does not exist, skipping", item)
+                log.warning("%s does not exist, skipping", item)
                 continue
 
             os.chdir(tmp)
@@ -1254,7 +1246,7 @@ def review_items(
             get_items([orig_item], state.datatracker)
             orig = read(orig_item)
             if orig is None:
-                logging.error("No original for %s, cannot review", orig_item)
+                log.error("No original for %s, cannot review", orig_item)
                 continue
 
             os.chdir(current_directory)
@@ -1341,7 +1333,7 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
     if save_agenda:
         write(json.dumps(agenda, indent=4), "agenda.json")
 
-    logging.info(
+    log.info(
         "Downloading ballot items from %s IESG agenda",
         agenda["telechat-date"],
     )
