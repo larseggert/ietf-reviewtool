@@ -50,7 +50,7 @@ SECTION_PATTERN = re.compile(
 
 
 class State:
-    def __init__(self, datatracker=None, verbose=False):
+    def __init__(self, datatracker=None, verbose=0):
         self.datatracker = datatracker
         self.verbose = verbose
 
@@ -69,7 +69,7 @@ class State:
     help="IETF Datatracker base URL.",
 )
 @click.pass_context
-def cli(ctx, datatracker: str, verbose: bool) -> None:
+def cli(ctx: object, datatracker: str, verbose: int) -> None:
     datatracker = re.sub(r"/+$", "", datatracker)
     ctx.obj = State(datatracker, verbose)
 
