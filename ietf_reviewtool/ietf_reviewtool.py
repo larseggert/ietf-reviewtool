@@ -25,6 +25,7 @@ import datetime
 import difflib
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -52,9 +53,10 @@ SECTION_PATTERN = re.compile(
 
 
 class State:
-    def __init__(self, datatracker=None, verbose=0):
+    def __init__(self, datatracker=None, verbose=0, width=79):
         self.datatracker = datatracker
         self.verbose = verbose
+        self.width = width
 
 
 @click.group(help="Review tool for IETF documents.")
@@ -70,10 +72,16 @@ class State:
     default="https://datatracker.ietf.org/",
     help="IETF Datatracker base URL.",
 )
+@click.option(
+    "--width",
+    "-w",
+    default=79,
+    help="Wrap the review to this character width.",
+)
 @click.pass_context
-def cli(ctx: object, datatracker: str, verbose: int) -> None:
+def cli(ctx: object, datatracker: str, verbose: int, width: int) -> None:
     datatracker = re.sub(r"/+$", "", datatracker)
-    ctx.obj = State(datatracker, verbose)
+    ctx.obj = State(datatracker, verbose, width)
     log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
 
     cache = appdirs.user_cache_dir("ietf-reviewtool")
@@ -229,7 +237,7 @@ def extract_urls(
             )
         ]
 
-    return urls
+    return set(urls)
 
 
 def get_current_agenda(datatracker: str) -> dict:
@@ -826,12 +834,12 @@ def review_item(orig: list, rev: list) -> dict:
     return review
 
 
-def fmt_review(review: dict, ruler: int = 79) -> None:
+def fmt_review(review: dict, width: int) -> None:
     """
     Format a review dict for datatracker submission.
 
     @param      review  The review to format
-    @param      ruler   The column number to wrap the review to
+    @param      width   The column number to wrap the review to
 
     @return     Wrapped text version of the review.
     """
@@ -839,20 +847,22 @@ def fmt_review(review: dict, ruler: int = 79) -> None:
         "discuss": None,
         "comment": None,
         "nit": (
-            "All comments below are very minor suggestions "
-            "that you may choose to incorporate in some way (or ignore), "
-            "as you see fit. There is no need to let me know what you did "
+            "All comments below are about very minor potential issues "
+            "that you may choose to address in some way - or ignore - "
+            "as you see fit. Some were flagged by automated tools, so there "
+            "will likely be some false positives. "
+            "There is no need to let me know what you did "
             "with these suggestions."
         ),
     }
 
     for category in boilerplate:
         if review[category]:
-            print("-" * ruler)
+            print("-" * width)
             print(category.upper())
-            print("-" * ruler)
+            print("-" * width)
             if boilerplate[category]:
-                print(textwrap.fill(boilerplate[category], width=ruler), "\n")
+                print(textwrap.fill(boilerplate[category], width=width), "\n")
 
             for line in review[category]:
                 print(line, end="")
@@ -980,7 +990,34 @@ def fetch_downrefs(datatracker: str) -> list:
 
 
 def untag(tag: str) -> str:
+    """
+    Remove angle brackets from reference tag.
+
+    @param      tag   Reference tag
+
+    @return     Tag without angle brackets.
+    """
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
+
+
+def wrap_and_indent(text: str, width: int = 50) -> str:
+    """
+    Wrap and indent a string if it is longer than width characters.
+
+    @param      text   The text to wrap and indent
+    @param      width  The width to wrap to
+
+    @return     Wrapped and indented text, or original text.
+    """
+    return (
+        "\n"
+        + textwrap.indent(
+            textwrap.fill(text, width=width, break_on_hyphens=False),
+            "     ",
+        )
+        if len(text) > 50
+        else text
+    )
 
 
 def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
@@ -1027,12 +1064,13 @@ def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
             f"informative sections: {', '.join(norm & info)}"
         )
 
-    if both < text:
-        result.append(
-            f"No reference entries found for: {', '.join(text - both)}"
-        )
-    elif both > text:
-        result.append(f"Uncited references: {', '.join(both - text)}")
+    if text - both:
+        ref_list = wrap_and_indent(", ".join(text - both))
+        result.append(f"No reference entries found for: {ref_list}")
+
+    if both - text:
+        ref_list = wrap_and_indent(", ".join(both - text))
+        result.append(f"Uncited references: {ref_list}")
 
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
@@ -1137,7 +1175,7 @@ def check_xml(doc: str) -> None:
         xml.etree.ElementTree.fromstring(text)
 
 
-def check_grammar(review: str) -> list:
+def check_grammar(review: str, width: int) -> list:
     issues = [
         i
         for i in language_tool_python.LanguageTool("en").check("".join(review))
@@ -1182,6 +1220,11 @@ def check_grammar(review: str) -> list:
         offset -= len(context[0:offset]) - len(compressed)
         context = re.sub(r"\s+", r" ", context)
 
+        if len(context) > width - 2:
+            cut = math.ceil((len(context) - width + 2) / 2)
+            context = context[cut:-cut]
+            offset -= cut
+
         result.append("> " + context + "\n")
         result.append("> " + " " * offset + "^" * issue.errorLength + "\n")
 
@@ -1192,14 +1235,13 @@ def check_grammar(review: str) -> list:
             .replace("’", "'")
         )
 
-        result.append(textwrap.fill(f"{message}", width=79) + "\n\n")
+        result.append(textwrap.fill(f"{message}", width=width) + "\n\n")
 
     return result
 
 
-def check_meta(meta: dict) -> list:
+def check_meta(meta: dict, width: int) -> list:
     result = []
-    # print(json.dumps(meta, indent=4))
 
     num_authors = len(meta["authors"])
     if num_authors > 5:
@@ -1207,7 +1249,7 @@ def check_meta(meta: dict) -> list:
             f"The document has {num_authors} authors, which exceeds the "
             "recommended author limit. I assume the sponsoring AD has agreed "
             "that this is appropriate?\n",
-            width=79,
+            width=width,
         )
 
     if re.match("Not OK", meta["iana_review_state"], re.IGNORECASE):
@@ -1304,12 +1346,14 @@ def review_items(
                 if not meta:
                     log.warning("No metadata available for %s", basename(item))
                 else:
-                    review["comment"].extend(check_meta(json.loads(meta)))
+                    review["comment"].extend(
+                        check_meta(json.loads(meta), state.width)
+                    )
 
             check_xml(orig)
 
             if chk_grammar:
-                review["nit"].extend(check_grammar(rev))
+                review["nit"].extend(check_grammar(rev, state.width))
 
             if chk_refs:
                 refs = extract_refs(orig)
@@ -1340,7 +1384,7 @@ def review_items(
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
 
-            fmt_review(review)
+            fmt_review(review, state.width)
 
 
 @click.command(
