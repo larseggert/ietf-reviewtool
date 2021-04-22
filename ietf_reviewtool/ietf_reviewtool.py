@@ -1197,30 +1197,74 @@ def check_grammar(review: str) -> list:
     return result
 
 
+def check_meta(meta: dict) -> list:
+    result = []
+    # print(json.dumps(meta, indent=4))
+
+    num_authors = len(meta["authors"])
+    if num_authors > 5:
+        result += textwrap.fill(
+            f"The document has {num_authors} authors, which exceeds the "
+            "recommended author limit. I assume the sponsoring AD has agreed "
+            "that this is appropriate?\n",
+            width=79,
+        )
+
+    if re.match("Not OK", meta["iana_review_state"], re.IGNORECASE):
+        result += (
+            "There seem to be unresolved IANA issues with this document.\n"
+        )
+
+    if not meta["consensus"]:
+        result += "There does not seem to be consensus for this document.\n"
+
+    if meta["stream"] != "IETF":
+        result += "This does not seem to be an IETF-stream document.\n"
+
+    return result
+
+
 @click.command("review", help="Extract review from named items.")
 @click.argument("items", nargs=-1)
 @click.option(
-    "--check_urls/--no-check_urls",
-    "check_urls",
+    "--check-urls/--no-check-urls",
+    "chk_urls",
     default=True,
     help="Check if URLs resolve.",
 )
 @click.option(
-    "--check_downrefs/--no-check_downrefs",
-    "check_downrefs",
+    "--check-refs/--no-check-refs",
+    "chk_refs",
     default=True,
-    help="Check if the draft has DOWNREFs.",
+    help="Check references in the draft for issues.",
+)
+@click.option(
+    "--check-grammar/--no-check-grammar",
+    "chk_grammar",
+    default=True,
+    help="Check grammar in the draft for issues.",
+)
+@click.option(
+    "--check-meta/--no-check-meta",
+    "chk_meta",
+    default=True,
+    help="Check metadata of the draft for issues.",
 )
 @click.pass_obj
 def review_items(
-    state: object, items: list, check_urls: bool, check_downrefs: bool
+    state: object,
+    items: list,
+    chk_urls: bool,
+    chk_refs: bool,
+    chk_grammar: bool,
+    chk_meta: bool,
 ) -> None:
     """
     Extract reviews from named items.
 
     @param      items        The items to extract reviews from
     @param      datatracker  The datatracker URL to use
-    @param      check_urls   Whether to check URLs for reachability
+    @param      chk_urls     Whether to check URLs for reachability
 
     @return     -
     """
@@ -1253,10 +1297,21 @@ def review_items(
             rev = read(item).splitlines(keepends=True)
             review = review_item(orig.splitlines(keepends=True), rev)
 
-            check_xml(orig)
-            review["nit"].extend(check_grammar(rev))
+            url = state.datatracker + "/doc/" + basename(item) + "/doc.json"
+            meta = fetch_url(url)
 
-            if check_downrefs:
+            if chk_meta:
+                if not meta:
+                    log.warning("No metadata available for %s", basename(item))
+                else:
+                    review["comment"].extend(check_meta(json.loads(meta)))
+
+            check_xml(orig)
+
+            if chk_grammar:
+                review["nit"].extend(check_grammar(rev))
+
+            if chk_refs:
                 refs = extract_refs(orig)
                 result = check_refs(
                     state.datatracker, refs, basename(item), get_status(orig)
@@ -1268,7 +1323,7 @@ def review_items(
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
 
-            if check_urls:
+            if chk_urls:
                 result = []
                 urls = extract_urls(orig)
                 reachability = {
