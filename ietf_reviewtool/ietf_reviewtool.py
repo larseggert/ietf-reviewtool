@@ -42,13 +42,47 @@ import requests_cache
 
 log = logging.getLogger(__name__)
 
-
+# pattern matching section headings
 SECTION_PATTERN = re.compile(
     r"""^(?:[\- ]\s)?(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
         Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
         (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?|
         \d+(?:\.\d+)*\.?)(.*)""",
     re.VERBOSE,
+)
+
+# pattern matching RFC2119 keywords
+KEYWORDS_PATTERN = re.compile(
+    r"""\W(MUST(?:\s+NOT)?|REQUIRED|SHALL(?:\s+NOT)?|SHOULD(?:\s+NOT)?|
+        (?:NOT\s+)?RECOMMENDED|MAY|OPTIONAL)\W""",
+    re.VERBOSE,
+)
+
+# pattern matching variants of the RFC8174 boilerplate text
+BOILERPLATE_8174_PATTERN = re.compile(
+    r"""The\s+key\s*words\s+"MUST",\s+"MUST\s+NOT",\s+"REQUIRED",\s+
+        "SHALL",\s+"SHALL\s+NOT",\s+"SHOULD",\s+"SHOULD\s+NOT",\s+
+        "RECOMMENDED",\s+"NOT\s+RECOMMENDED",\s+"MAY",\s+and\s+
+        "OPTIONAL"\s+in\s+this\s+document\s+are\s+to\s+be\s+interpreted\s+
+        as\s+described\s+in\s+\[?BCP\s*14\]?,?\s+\[?RFC\s*2119\]?,?\s+
+        (?:and\s+)?\[?RFC\s*8174\]?,?\s+when,\s+and\s+only\s+when,\s+
+        they\s+appear\s+in\s+all\s+capitals,\s+as\s+shown\s+here\.""",
+    re.VERBOSE | re.MULTILINE,
+)
+
+# pattern matching variants of the RFC2119 boilerplate text
+BOILERPLATE_2119_PATTERN = re.compile(
+    r"""The\s+key\s*words\s+"MUST",\s+"MUST\s+NOT",\s+"REQUIRED",\s+
+        "SHALL",\s+"SHALL\s+NOT",\s+"SHOULD",\s+"SHOULD\s+NOT",\s+
+        "RECOMMENDED",\s+(?:"NOT\s+RECOMMENDED",\s+)?"MAY",\s+and\s+
+        "OPTIONAL"\s+in\s+this\s+document\s+are\s+to\s+be\s+interpreted\s+
+        as\s+described\s+in\s+\[?RFC\s*2119\]?\.""",
+    re.VERBOSE | re.MULTILINE,
+)
+
+# pattern matching the beginning of the RFC2119/RFC8174 boilerplate text
+BOILERPLATE_BEGIN_PATTERN = re.compile(
+    r"""The\s+key\s*words\s+"MUST",\s+"MUST\s+NOT",\s+"REQUIRED",\s+""",
 )
 
 
@@ -1149,6 +1183,13 @@ def get_status(doc: str) -> str:
 
 
 def check_xml(doc: str) -> None:
+    """
+    Check any XML in the document for issues
+
+    @param      doc   The document text
+
+    @return     List of issues found
+    """
     snippets = re.finditer(r"^(.*)<\?xml\s", doc, re.MULTILINE)
     for snip in snippets:
         start = re.search(r"<\s*(\w+)", doc[snip.start() :])
@@ -1176,6 +1217,14 @@ def check_xml(doc: str) -> None:
 
 
 def check_grammar(review: str, width: int) -> list:
+    """
+    Check document grammar.
+
+    @param      review  The document text
+    @param      width   The width the issues should be wrapped to
+
+    @return     List of grammar nits
+    """
     issues = [
         i
         for i in language_tool_python.LanguageTool("en").check("".join(review))
@@ -1241,15 +1290,26 @@ def check_grammar(review: str, width: int) -> list:
 
 
 def check_meta(meta: dict, width: int) -> list:
+    """
+    Check document metadata for issues.
+
+    @param      meta   The metadata
+    @param      width  The width the comments should be wrapped to
+
+    @return     List of issues found
+    """
     result = []
 
     num_authors = len(meta["authors"])
     if num_authors > 5:
-        result += textwrap.fill(
-            f"The document has {num_authors} authors, which exceeds the "
-            "recommended author limit. I assume the sponsoring AD has agreed "
-            "that this is appropriate?\n",
-            width=width,
+        result += (
+            textwrap.fill(
+                f"The document has {num_authors} authors, which exceeds the "
+                "recommended author limit. I assume the sponsoring AD has "
+                "agreed that this is appropriate?",
+                width=width,
+            )
+            + "\n\n"
         )
 
     if re.match("Not OK", meta["iana_review_state"], re.IGNORECASE):
@@ -1263,6 +1323,59 @@ def check_meta(meta: dict, width: int) -> list:
     if meta["stream"] != "IETF":
         result += "This does not seem to be an IETF-stream document.\n"
 
+    return result
+
+
+def check_boilerplate(text: str, status: str, width: int) -> list:
+    """
+    Check the RFC2119/RFC8174 boilerplate in the document.
+
+    @param      text    The document text
+    @param      status  The standards level of this document
+    @param      width   The width the comments should be wrapped to
+
+    @return     List of issues found.
+    """
+    result = []
+    uses_keywords = re.search(KEYWORDS_PATTERN, text)
+    has_8174_boilerplate = re.search(BOILERPLATE_8174_PATTERN, text)
+    has_2119_boilerplate = re.search(BOILERPLATE_2119_PATTERN, text)
+    has_boilerplate_begin = re.search(BOILERPLATE_BEGIN_PATTERN, text)
+
+    msg = None
+    if uses_keywords:
+        if status.lower() in ["informational", "experimental"]:
+            result += (
+                f"Document has {status} status, but uses RFC2119 keywords.\n\n"
+            )
+
+        if not has_8174_boilerplate:
+            msg = (
+                "This document uses RFC2119 keywords, but does not "
+                "contain the recommended RFC8174 boilerplate."
+            )
+            if has_2119_boilerplate:
+                msg += " (It contains a variant of the RFC2119 boilerplate.)"
+            elif has_boilerplate_begin:
+                msg += " (It contains some text with a similar beginning.)"
+    else:
+        if (
+            has_8174_boilerplate
+            or has_2119_boilerplate
+            or has_boilerplate_begin
+        ):
+            msg = "This document does not use RFC2119 keywords, but contains"
+            if has_8174_boilerplate:
+                msg += "the RFC8174 boilerplate."
+            elif has_2119_boilerplate:
+                msg += "the RFC2119 boilerplate."
+            elif has_boilerplate_begin:
+                msg += (
+                    "text with a beginning similar to the RFC2119 boilerplate."
+                )
+
+    if msg:
+        result += textwrap.fill(msg, width=width) + "\n\n"
     return result
 
 
@@ -1338,13 +1451,19 @@ def review_items(
             os.chdir(current_directory)
             rev = read(item).splitlines(keepends=True)
             review = review_item(orig.splitlines(keepends=True), rev)
+            status = get_status(orig)
+            name = basename(item)
 
-            url = state.datatracker + "/doc/" + basename(item) + "/doc.json"
+            review["comment"].extend(
+                check_boilerplate(orig, status, state.width)
+            )
+
+            url = state.datatracker + "/doc/" + name + "/doc.json"
             meta = fetch_url(url)
 
             if chk_meta:
                 if not meta:
-                    log.warning("No metadata available for %s", basename(item))
+                    log.warning("No metadata available for %s", name)
                 else:
                     review["comment"].extend(
                         check_meta(json.loads(meta), state.width)
@@ -1357,9 +1476,7 @@ def review_items(
 
             if chk_refs:
                 refs = extract_refs(orig)
-                result = check_refs(
-                    state.datatracker, refs, basename(item), get_status(orig)
-                )
+                result = check_refs(state.datatracker, refs, name, status)
                 if result:
                     review["nit"].append(
                         "These reference issues exist in the document:\n",
