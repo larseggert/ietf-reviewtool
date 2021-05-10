@@ -64,9 +64,10 @@ BOILERPLATE_8174_PATTERN = re.compile(
         "SHALL",\s+"SHALL\s+NOT",\s+"SHOULD",\s+"SHOULD\s+NOT",\s+
         "RECOMMENDED",\s+"NOT\s+RECOMMENDED",\s+"MAY",\s+and\s+
         "OPTIONAL"\s+in\s+this\s+document\s+are\s+to\s+be\s+interpreted\s+
-        as\s+described\s+in\s+\[?BCP\s*14\]?,?\s+\[?RFC\s*2119\]?,?\s+
+        as\s+described\s+in\s+\[?BCP\s*14\]?,?\s+\[?RFC\s*2119\]?,?\s*
         (?:and\s+)?\[?RFC\s*8174\]?,?\s+when,\s+and\s+only\s+when,\s+
-        they\s+appear\s+in\s+all\s+capitals,\s+as\s+shown\s+here\.""",
+        they\s+appear\s+in\s+all\s+capitals,\s+as\s+shown\s+
+        (?:above|here)\.""",
     re.VERBOSE | re.MULTILINE,
 )
 
@@ -144,7 +145,8 @@ def die(msg: list, err: int = 1) -> None:
 def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
     """
     Fetches the resource at the given URL or checks its reachability (when
-    method is "HEAD".) In the latter case, the cache is also disabled.
+    method is "HEAD".) A failing HEAD request is retried as a GET, since some
+    servers apparently don't like HEAD.
 
     @param      url        The URL to fetch
     @param      use_cache  Whether to use the local cache or not
@@ -153,20 +155,47 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
     @return     The decoded content of the resource (or the empty string for a
                 successful HEAD request). None if an error occurred.
     """
-    try:
-        log.debug(
-            "%s %scache %s", method.lower(), "no" if not use_cache else "", url
-        )
-        if use_cache is False:
-            with requests_cache.disabled():
-                response = requests.request(method, url, allow_redirects=True)
-        else:
-            response = requests.request(method, url, allow_redirects=True)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as err:
-        log.error("%s -> %s", url, err)
-        return None
-    return response.text
+    while True:
+        try:
+            log.debug(
+                "%s %scache %s",
+                method.lower(),
+                "no" if not use_cache else "",
+                url,
+            )
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/90.0.4430.72 Safari/537.36"
+                )
+            }
+            if use_cache is False:
+                with requests_cache.disabled():
+                    response = requests.request(
+                        method,
+                        url,
+                        allow_redirects=True,
+                        timeout=10,
+                        headers=headers,
+                    )
+            else:
+                response = requests.request(
+                    method,
+                    url,
+                    allow_redirects=True,
+                    timeout=10,
+                    headers=headers,
+                )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as err:
+            log.error("%s -> %s", url, err)
+            if method == "HEAD":
+                log.info("Retrying %s with GET", url)
+                method = "GET"
+                continue
+            return None
+        return response.text
 
 
 def read(file_name: str) -> str:
@@ -409,6 +438,22 @@ def fetch_dt(datatracker: str, query: str) -> dict:
     return None
 
 
+def get_latest(data: list, key: str) -> dict:
+    """
+    Gets the latest element, by timestamp in key, from data.
+
+    @param      data  The list to return the latest element of
+    @param      key   The timestamp key
+
+    @return     The latest element by timestamp in data.
+    """
+    data.sort(
+        key=lambda k: datetime.datetime.fromisoformat(k[key]),
+        reverse=True,
+    )
+    return data[0]
+
+
 def get_writeups(datatracker: str, item: str) -> str:
     """
     Download related document writeups for an item from the datatracker.
@@ -439,11 +484,7 @@ def get_writeups(datatracker: str, item: str) -> str:
         log.debug(events)
     for evt in events:
         type_events = [e for e in doc_events if e["type"] == evt]
-        type_events.sort(
-            key=lambda k: datetime.datetime.fromisoformat(k["time"]),
-            reverse=True,
-        )
-        text = type_events[0]["text"]
+        text = get_latest(type_events, "time")["text"]
 
         directory = re.sub(r"^(?:changed_)?(.*)?", r"\1", evt)
         if not os.path.isdir(directory):
@@ -509,6 +550,7 @@ def get_items(
         log.info("Getting %s", item)
         cache = None
         text = None
+        url = None
         if item.startswith("draft-"):
             url = "https://ietf.org/archive/id/" + file_name
             cache = os.getenv("IETF_IDS")
@@ -529,8 +571,8 @@ def get_items(
             # TODO: in-progress conflict-reviews are not in the cache
             # cache = os.getenv("IETF_CONFLICT_REVIEWS")
             strip = False
-        else:
-            die("Unknown item type: ", item)
+        # else:
+        #     die(f"Unknown item type: {item}")
 
         if cache is not None:
             cache_file = os.path.join(cache, file_name)
@@ -540,7 +582,7 @@ def get_items(
             else:
                 log.debug("No cached copy of %s in %s", item, cache)
 
-        if text is None:
+        if text is None and url is not None:
             text = fetch_url(url)
 
         if text is not None:
@@ -615,7 +657,7 @@ def section_and_paragraph(
     # track sections
     pot_sec = SECTION_PATTERN.search(cur)
     pat = {True: r"^([\- ] +$|\+ )", False: r"^( *$)"}
-    if pot_sec and re.search(pat[is_diff], nxt):
+    if pot_sec and nxt and (re.search(pat[is_diff], nxt) or len(cur) > 65):
         pot_sec = pot_sec.group(1)
         if re.match(r"\d", pot_sec):
             if had_nn:
@@ -643,6 +685,7 @@ def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
 
     @return     A formatted prefix line.
     """
+    para_sec = para_sec if para_sec else [1, None, False]
     line = f"{para_sec[1]}, p" if para_sec[1] else "P"
     line += f"aragraph {para_sec[0]}, {cat}:\n"
     return line
@@ -868,6 +911,19 @@ def review_item(orig: list, rev: list) -> dict:
     return review
 
 
+def wrap_para(text: str, width: int = 79, end: str = "\n\n"):
+    """
+    Return a wrapped version of the text, ending with end.
+
+    @param      text   The text to wrap
+    @param      width  The width to wrap to
+    @param      end    The end to add to the text
+
+    @return     Wrapped version of text followed by end.
+    """
+    return textwrap.fill(text, width=width, break_on_hyphens=False) + end
+
+
 def fmt_review(review: dict, width: int) -> None:
     """
     Format a review dict for datatracker submission.
@@ -896,7 +952,7 @@ def fmt_review(review: dict, width: int) -> None:
             print(category.upper())
             print("-" * width)
             if boilerplate[category]:
-                print(textwrap.fill(boilerplate[category], width=width), "\n")
+                print(wrap_para(boilerplate[category], width=width, end="\n"))
 
             for line in review[category]:
                 print(line, end="")
@@ -987,7 +1043,7 @@ def duplicates(data: list) -> set:
     return dupes.discard(None)
 
 
-def level_ok(kind: str, level: str) -> bool:
+def is_downref(kind: str, level: str) -> bool:
     """
     Check if a document reference is allowed (i.e., is not a DOWNREF) for a
     document at a given standards level.
@@ -995,17 +1051,17 @@ def level_ok(kind: str, level: str) -> bool:
     @param      kind   The kind of reference (normative or informative.)
     @param      level  The status level of the reference
 
-    @return     False if this is a DOWNREF, True otherwise.
+    @return     True if this is a DOWNREF, True otherwise.
     """
     if kind.lower() == "normative":
-        return level is not None and level.lower() in [
+        return level is None or level.lower() not in [
             "best current practice",
             "proposed standard",
             "draft standard",
             "internet standard",
         ]
     if kind.lower() == "informative":
-        return True
+        return False
     die(f"unknown kind {kind}")
 
 
@@ -1046,7 +1102,7 @@ def wrap_and_indent(text: str, width: int = 50) -> str:
     return (
         "\n"
         + textwrap.indent(
-            textwrap.fill(text, width=width, break_on_hyphens=False),
+            textwrap.fill(text, width=width - 5, break_on_hyphens=False),
             "     ",
         )
         if len(text) > 50
@@ -1054,18 +1110,21 @@ def wrap_and_indent(text: str, width: int = 50) -> str:
     )
 
 
-def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
+def check_refs(
+    datatracker: str, refs: dict, width: int, name: str, status: str
+) -> dict:
     """
     Check the references.
 
     @param      datatracker  The datatracker URL to use
     @param      refs         The references to check
+    @param      width        The width to wrap to
     @param      name         The name of this document.
     @param      status       The standards level of the given document
 
     @return     List of messages.
     """
-    result = []
+    result = {"discuss": [], "comment": [], "nit": []}
     downrefs = fetch_downrefs(datatracker)
 
     # remove self-mentions from extracted references in the text
@@ -1078,13 +1137,21 @@ def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
         tags, tgts = zip(*refs[kind])
         dupes = duplicates(tags)
         if dupes:
-            result.append(f"Duplicate {kind} references: {', '.join(dupes)}")
+            result["nit"].append(
+                wrap_para(
+                    f"Duplicate {kind} references: {', '.join(dupes)}.",
+                    width=width,
+                )
+            )
 
         dupes = duplicates(tgts)
         if dupes:
             tags = [t[0] for t in refs[kind] if t[1] in dupes]
-            result.append(
-                f"Duplicate {kind} references to: {', '.join(dupes)}"
+            result["nit"].append(
+                wrap_para(
+                    f"Duplicate {kind} references to: {', '.join(dupes)}.",
+                    width=width,
+                )
             )
 
     norm = set(e[0] for e in refs["normative"])
@@ -1093,74 +1160,101 @@ def check_refs(datatracker: str, refs: dict, name: str, status: str) -> list:
     text = {"[" + r + "]" for r in {untag(r) for r in refs["text"]}}
 
     if norm & info:
-        result.append(
-            "Reference entries duplicated in both normative and "
-            f"informative sections: {', '.join(norm & info)}"
+        result["nit"].append(
+            wrap_para(
+                "Reference entries duplicated in both normative and "
+                f"informative sections: {', '.join(norm & info)}.",
+                width=width,
+            )
         )
 
     if text - both:
-        ref_list = wrap_and_indent(", ".join(text - both))
-        result.append(f"No reference entries found for: {ref_list}")
+        ref_list = wrap_and_indent(", ".join(text - both), width=width)
+        result["comment"].append(
+            f"No reference entries found for: {ref_list}\n\n"
+        )
 
     if both - text:
-        ref_list = wrap_and_indent(", ".join(both - text))
-        result.append(f"Uncited references: {ref_list}")
+        ref_list = wrap_and_indent(", ".join(both - text), width=width)
+        result["nit"].append(
+            wrap_para(f"Uncited references: {ref_list}.", width=width)
+        )
 
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
             ntag = untag(tag)
             if doc:
-                docname = re.search(
-                    r"^(rfc\d+|(draft-[-a-z\d_.]+)-\d{2,})", doc
+                name = re.search(
+                    r"^(rfc\d+|(draft-[-a-z\d_.]+)-(\d{2,}))", doc
                 )
-            if not doc or not docname:
+            if not doc or not name:
                 log.info(
                     "No metadata available for %s reference %s", kind, tag
                 )
+                if kind == "normative":
+                    result["comment"].append(
+                        wrap_para(
+                            f"Possible DOWNREF from this {status} doc "
+                            f"to {ntag}.",
+                            width=width,
+                        )
+                    )
                 continue
 
-            groups = list(docname.groups())
-            docname = groups[1] if groups[1] else groups[0]
-            docname = re.sub(r"rfc0*(\d+)", r"rfc\1", docname)
+            groups = list(name.groups())
+            name = groups[1] if groups[1] else groups[0]
+            name = re.sub(r"rfc0*(\d+)", r"rfc\1", name)
+            rev = groups[2]
+            meta = fetch_meta(datatracker, name)
+
+            latest = get_latest(meta["rev_history"], "published")
+            if latest["rev"] and rev and latest["rev"] > rev:
+                result["nit"].append(
+                    wrap_para(
+                        f"Document references {name}-{rev}, but "
+                        f"{name}-{latest['rev']} is the latest "
+                        f"available revision.",
+                        width=width,
+                    )
+                )
 
             if status.lower() not in ["informational", "experimental"]:
-                url = datatracker + "/doc/" + docname + "/doc.json"
-                meta = fetch_url(url)
-
-                if not meta:
-                    log.info(
-                        "No metadata available for %s reference %s", kind, tag
-                    )
-                    continue
-
-                meta = json.loads(meta)
                 level = meta["std_level"] or meta["intended_std_level"]
 
-                if not level_ok(kind, level) and docname not in downrefs:
+                if is_downref(kind, level) and name not in downrefs:
                     if level is None:
-                        result.append(
-                            f"Possible DOWNREF from this {status} doc "
-                            f"to {ntag}"
+                        result["comment"].append(
+                            wrap_para(
+                                f"Possible DOWNREF from this {status} doc "
+                                f"to {ntag}.",
+                                width=width,
+                            )
                         )
                     else:
-                        result.append(
-                            f"DOWNREF from this {status} doc to {level} {ntag}"
+                        result["discuss"].append(
+                            wrap_para(
+                                f"DOWNREF from this {status} doc to {level} "
+                                f"{ntag}.",
+                                width=width,
+                            )
                         )
 
             obsoleted_by = fetch_dt(
                 datatracker,
-                "relateddocument/?relationship__slug=obs&target__name="
-                + docname,
+                "relateddocument/?relationship__slug=obs&target__name=" + name,
             )
             if obsoleted_by:
                 if len(obsoleted_by) > 1:
-                    log.warning("%s obsoleted by more than one doc", docname)
+                    log.warning("%s obsoleted by more than one doc", name)
                 else:
                     obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
                     if "rfc" in obs_by:
-                        result.append(
-                            f"Obsolete reference to {ntag}, "
-                            f"obsoleted by RFC{obs_by['rfc']}"
+                        result["nit"].append(
+                            wrap_para(
+                                f"Obsolete reference to {ntag}, "
+                                f"obsoleted by RFC{obs_by['rfc']}.",
+                                width=width,
+                            )
                         )
 
     return result
@@ -1179,7 +1273,49 @@ def get_status(doc: str) -> str:
         doc,
         re.MULTILINE,
     )
-    return status.group(1).strip() if status else None
+    return status.group(1).strip() if status else ""
+
+
+def fetch_meta(datatracker: str, doc: str) -> dict:
+    """
+    Fetches metadata for doc from datatracker.
+
+    @param      datatracker  The datatracker URL to use
+    @param      doc          The document to fetch metadata for
+
+    @return     The metadata, or None
+    """
+    url = datatracker + "/doc/" + doc + "/doc.json"
+    meta = fetch_url(url)
+    if not meta:
+        log.info("No metadata available for %s", doc)
+        return None
+    return json.loads(meta)
+
+
+def get_relationships(
+    doc: str,
+) -> dict:
+    """
+    Extract the documents that are intended to be updated by this document.
+
+    @param      doc   The document to extract the information from
+
+    @return     A list of documents
+    """
+    result = {}
+    pat = {"updates": r"[Uu]pdates", "obsoletes": r"[Oo]bsoletes"}
+    for rel in ["updates", "obsoletes"]:
+        match = re.search(
+            r"^" + pat[rel] + r":\s*((?:(?:RFC\s*)?\d{3,},?\s*)+)",
+            doc,
+            re.MULTILINE,
+        )
+        if match:
+            result[rel] = match.group(1)
+            result[rel] = re.sub(r"\s", r"", result[rel])
+            result[rel] = result[rel].split(",")
+    return result
 
 
 def check_xml(doc: str) -> None:
@@ -1216,7 +1352,7 @@ def check_xml(doc: str) -> None:
         xml.etree.ElementTree.fromstring(text)
 
 
-def check_grammar(review: str, width: int) -> list:
+def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
     """
     Check document grammar.
 
@@ -1235,6 +1371,7 @@ def check_grammar(review: str, width: int) -> list:
             "COPYRIGHT",
             "CURRENCY",
             "DASH_RULE",
+            "DATE_FUTURE_VERB_PAST",
             "EN_QUOTES",
             "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
             "KEY_WORDS",
@@ -1251,7 +1388,7 @@ def check_grammar(review: str, width: int) -> list:
     para_sec = None
     cur = 0
     pos = 0
-    result = []
+    result = {"discuss": [], "comment": [], "nit": []}
     for issue in issues:
         while pos + len(review[cur + 1]) < issue.offset:
             para_sec = section_and_paragraph(
@@ -1260,7 +1397,7 @@ def check_grammar(review: str, width: int) -> list:
             pos += len(review[cur])
             cur += 1
 
-        result.append(fmt_section_and_paragraph(para_sec, "nit"))
+        result["nit"].append(fmt_section_and_paragraph(para_sec, "nit"))
         context = issue.context.lstrip(".")
         offset = issue.offsetInContext - (len(issue.context) - len(context))
         context = context.rstrip(".")
@@ -1274,8 +1411,10 @@ def check_grammar(review: str, width: int) -> list:
             context = context[cut:-cut]
             offset -= cut
 
-        result.append("> " + context + "\n")
-        result.append("> " + " " * offset + "^" * issue.errorLength + "\n")
+        result["nit"].append("> " + context + "\n")
+        result["nit"].append(
+            "> " + " " * offset + "^" * issue.errorLength + "\n"
+        )
 
         message = (
             issue.message.replace("“", '"')
@@ -1284,49 +1423,107 @@ def check_grammar(review: str, width: int) -> list:
             .replace("’", "'")
         )
 
-        result.append(textwrap.fill(f"{message}", width=width) + "\n\n")
+        if show_rule_id:
+            message = f"{message} [{issue.ruleId}]"
+
+        result["nit"].append(wrap_para(f"{message}", width=width))
 
     return result
 
 
-def check_meta(meta: dict, width: int) -> list:
+def relationship_ok(status: str, level: str) -> bool:
+    """
+    Check if a document with the given intended status can have a relationship
+    with a document of the given level.
+
+    @param      status  The intended status of a document
+    @param      level   The level of a document
+
+    @return     True if the relationship is OK.
+    """
+    std = [
+        "standards track",
+        "best current practice",
+        "proposed standard",
+        "draft standard",
+        "internet standard",
+    ]
+    return (level.lower() in std) == (status.lower() in std)
+
+
+def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     """
     Check document metadata for issues.
 
+    @param      text   The text of the document
     @param      meta   The metadata
     @param      width  The width the comments should be wrapped to
 
     @return     List of issues found
     """
-    result = []
+    result = {"discuss": [], "comment": [], "nit": []}
 
     num_authors = len(meta["authors"])
     if num_authors > 5:
-        result += (
-            textwrap.fill(
+        result["comment"].append(
+            wrap_para(
                 f"The document has {num_authors} authors, which exceeds the "
                 "recommended author limit. I assume the sponsoring AD has "
                 "agreed that this is appropriate?",
                 width=width,
             )
-            + "\n\n"
         )
 
-    if re.match("Not OK", meta["iana_review_state"], re.IGNORECASE):
-        result += (
-            "There seem to be unresolved IANA issues with this document.\n"
+    iana_review_state = (
+        meta["iana_review_state"] if "iana_review_state" in meta else None
+    )
+    if iana_review_state and re.match(
+        r".*Not\s+OK", iana_review_state, re.IGNORECASE
+    ):
+        result["discuss"].append(
+            wrap_para(
+                "This document seems to have unresolved IANA issues, so I "
+                "am holding a DISCUSS for IANA until the issues are resolved.",
+                width=width,
+            )
         )
 
-    if not meta["consensus"]:
-        result += "There does not seem to be consensus for this document.\n"
+    consensus = meta["consensus"] if "consensus" in meta else None
+    if not consensus:
+        result["comment"].append(
+            wrap_para(
+                "There does not seem to be consensus for this document.",
+                width=width,
+            )
+        )
 
-    if meta["stream"] != "IETF":
-        result += "This does not seem to be an IETF-stream document.\n"
+    stream = meta["stream"] if "stream" in meta else None
+    if stream != "IETF":
+        result["comment"].append(
+            wrap_para(
+                "This does not seem to be an IETF-stream document.",
+                width=width,
+            )
+        )
+
+    status = get_status(text)
+    for rel, docs in get_relationships(text).items():
+        for doc in docs:
+            meta = fetch_meta(datatracker, "rfc" + doc)
+            level = meta["std_level"] or meta["intended_std_level"]
+            if not relationship_ok(status, level):
+                result["discuss"].append(
+                    wrap_para(
+                        f"This {status} document {rel} {doc}, "
+                        f"which is a {level}.",
+                        width=width,
+                    )
+                )
 
     return result
 
 
-def check_boilerplate(text: str, status: str, width: int) -> list:
+def check_boilerplate(text: str, status: str, width: int) -> dict:
     """
     Check the RFC2119/RFC8174 boilerplate in the document.
 
@@ -1336,7 +1533,7 @@ def check_boilerplate(text: str, status: str, width: int) -> list:
 
     @return     List of issues found.
     """
-    result = []
+    result = {"discuss": [], "comment": [], "nit": []}
     uses_keywords = re.search(KEYWORDS_PATTERN, text)
     has_8174_boilerplate = re.search(BOILERPLATE_8174_PATTERN, text)
     has_2119_boilerplate = re.search(BOILERPLATE_2119_PATTERN, text)
@@ -1345,8 +1542,12 @@ def check_boilerplate(text: str, status: str, width: int) -> list:
     msg = None
     if uses_keywords:
         if status.lower() in ["informational", "experimental"]:
-            result += (
-                f"Document has {status} status, but uses RFC2119 keywords.\n\n"
+            result["comment"].append(
+                wrap_para(
+                    f"Document has {status} status, but uses RFC2119 "
+                    f"keywords.",
+                    width=width,
+                )
             )
 
         if not has_8174_boilerplate:
@@ -1375,8 +1576,20 @@ def check_boilerplate(text: str, status: str, width: int) -> list:
                 )
 
     if msg:
-        result += textwrap.fill(msg, width=width) + "\n\n"
+        result["comment"].append(wrap_para(msg, width=width))
     return result
+
+
+def review_extend(review: dict, extension: dict) -> dict:
+    for cat in review:
+        if cat in extension:
+            review[cat].extend(extension[cat])
+
+    for cat in extension:
+        if cat not in review:
+            review[cat] = extension[cat]
+
+    return review
 
 
 @click.command("review", help="Extract review from named items.")
@@ -1444,45 +1657,47 @@ def review_items(
             orig_item = os.path.basename(item)
             get_items([orig_item], state.datatracker)
             orig = read(orig_item)
-            if orig is None:
-                log.error("No original for %s, cannot review", orig_item)
-                continue
-
             os.chdir(current_directory)
-            rev = read(item).splitlines(keepends=True)
+            rev = read(item)
+            if orig is None:
+                log.error(
+                    "No original for %s, cannot review, "
+                    "only performing checks",
+                    orig_item,
+                )
+                orig = rev
+            rev = rev.splitlines(keepends=True)
             review = review_item(orig.splitlines(keepends=True), rev)
             status = get_status(orig)
             name = basename(item)
 
-            review["comment"].extend(
-                check_boilerplate(orig, status, state.width)
-            )
+            review_extend(review, check_boilerplate(orig, status, state.width))
 
-            url = state.datatracker + "/doc/" + name + "/doc.json"
-            meta = fetch_url(url)
-
-            if chk_meta:
-                if not meta:
-                    log.warning("No metadata available for %s", name)
-                else:
-                    review["comment"].extend(
-                        check_meta(json.loads(meta), state.width)
-                    )
+            meta = fetch_meta(state.datatracker, name)
+            if chk_meta and meta:
+                review_extend(
+                    review,
+                    check_meta(state.datatracker, orig, meta, state.width),
+                )
 
             check_xml(orig)
 
             if chk_grammar:
-                review["nit"].extend(check_grammar(rev, state.width))
+                review_extend(
+                    review, check_grammar(rev, state.width, state.verbose > 0)
+                )
 
             if chk_refs:
-                refs = extract_refs(orig)
-                result = check_refs(state.datatracker, refs, name, status)
-                if result:
-                    review["nit"].append(
-                        "These reference issues exist in the document:\n",
-                    )
-                    review["nit"].extend(f" * {line}\n" for line in result)
-                    review["nit"].append("\n")
+                review_extend(
+                    review,
+                    check_refs(
+                        state.datatracker,
+                        extract_refs(orig),
+                        state.width,
+                        name,
+                        status,
+                    ),
+                )
 
             if chk_urls:
                 result = []
