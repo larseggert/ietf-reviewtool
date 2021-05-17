@@ -274,7 +274,7 @@ def extract_urls(
     # find all URLs
     text = unfold(text)
     urls = re.findall(
-        r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#]+\.?)+(?:/[^\s)\">;]*)?",
+        r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#)]+\.?)+(?:/[^\s)\">;]*)?",
         text,
         re.IGNORECASE,
     )
@@ -1217,14 +1217,23 @@ def check_refs(
 
             latest = get_latest(meta["rev_history"], "published")
             if latest["rev"] and rev and latest["rev"] > rev:
-                result["nit"].append(
-                    wrap_para(
-                        f"Document references {name}-{rev}, but "
-                        f"{name}-{latest['rev']} is the latest "
-                        f"available revision.",
-                        width=width,
+                if latest["rev"].startswith("rfc"):
+                    result["nit"].append(
+                        wrap_para(
+                            f"Document still references {name}, but that has "
+                            f"been published as {latest['rev'].upper()}.",
+                            width=width,
+                        )
                     )
-                )
+                else:
+                    result["nit"].append(
+                        wrap_para(
+                            f"Document still references {name}-{rev}, but "
+                            f"-{latest['rev']} is the latest "
+                            f"available revision.",
+                            width=width,
+                        )
+                    )
 
             if status.lower() not in ["informational", "experimental"]:
                 level = meta["std_level"] or meta["intended_std_level"]
@@ -1734,6 +1743,23 @@ def review_items(
                 if result:
                     review["nit"].append(
                         "These URLs in the document did not return content:\n",
+                    )
+                    review["nit"].extend(f" * {line}\n" for line in result)
+                    review["nit"].append("\n")
+
+                result = []
+                urls = [u for u in urls if u.startswith("http:")]
+                reachability = {
+                    u: fetch_url(u, state.verbose > 0, "HEAD") for u in urls
+                }
+                for url in urls:
+                    if reachability[url] is not None:
+                        result.append(url)
+
+                if result:
+                    review["nit"].append(
+                        "These URLs in the document can probably be converted "
+                        "to HTTPS:\n",
                     )
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
