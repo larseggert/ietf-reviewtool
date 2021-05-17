@@ -1,8 +1,8 @@
 # ietf-reviewtool
 
 This is a simple Python 3 tool to download and review IETF documents, such as
-Internet-Drafts or RFCs. It has no dependencies beyond what comes standard with
-Python 3, and comes packaged as a single `ietf-reviewtool` script.
+Internet-Drafts or RFCs, and comes packaged as a single `ietf-reviewtool`
+script.
 
 ## About
 
