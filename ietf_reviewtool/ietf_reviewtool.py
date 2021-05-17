@@ -58,6 +58,13 @@ KEYWORDS_PATTERN = re.compile(
     re.VERBOSE,
 )
 
+# pattern matching RFC2119 keywords used with lowercase "not"
+LC_NOT_KEYWORDS_PATTERN = re.compile(
+    r"""\W((?:MUST|SHALL|SHOULD)\s+not|not\s+RECOMMENDED)\W""",
+    re.VERBOSE,
+)
+
+
 # pattern matching variants of the RFC8174 boilerplate text
 BOILERPLATE_8174_PATTERN = re.compile(
     r"""The\s+key\s*words\s+"MUST",\s+"MUST\s+NOT",\s+"REQUIRED",\s+
@@ -939,7 +946,8 @@ def fmt_review(review: dict, width: int) -> None:
         "nit": (
             "All comments below are about very minor potential issues "
             "that you may choose to address in some way - or ignore - "
-            "as you see fit. Some were flagged by automated tools, so there "
+            "as you see fit. Some were flagged by automated tools (via "
+            "https://github.com/larseggert/ietf-reviewtool), so there "
             "will likely be some false positives. "
             "There is no need to let me know what you did "
             "with these suggestions."
@@ -1577,6 +1585,20 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
 
     if msg:
         result["comment"].append(wrap_para(msg, width=width))
+
+    if uses_keywords:
+        lc_not = re.findall(LC_NOT_KEYWORDS_PATTERN, text)
+        if lc_not:
+            lc_not_str = ", ".join(['"' + e + '"' for e in lc_not])
+            result["comment"].append(
+                wrap_para(
+                    f'Using lowercase "not" together with an uppercase '
+                    f"RFC 2119 keyword is not acceptable usage. Found: "
+                    f"{lc_not_str}",
+                    width=width,
+                )
+            )
+
     return result
 
 
