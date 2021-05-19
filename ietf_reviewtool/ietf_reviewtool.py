@@ -1383,6 +1383,8 @@ def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
         for i in language_tool_python.LanguageTool("en").check("".join(review))
         if i.ruleId
         not in [
+            "ADVERTISEMENT_OF_FOR",
+            "ALL_OF_THE",
             "ARROWS",
             "COMMA_PARENTHESIS_WHITESPACE",
             "COPYRIGHT",
