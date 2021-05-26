@@ -23,6 +23,7 @@ SPDX-License-Identifier: GPL-2.0
 
 import datetime
 import difflib
+import html
 import json
 import logging
 import math
@@ -71,7 +72,7 @@ BOILERPLATE_8174_PATTERN = re.compile(
         "SHALL",\s+"SHALL\s+NOT",\s+"SHOULD",\s+"SHOULD\s+NOT",\s+
         "RECOMMENDED",\s+"NOT\s+RECOMMENDED",\s+"MAY",\s+and\s+
         "OPTIONAL"\s+in\s+this\s+document\s+are\s+to\s+be\s+interpreted\s+
-        as\s+described\s+in\s+\[?BCP\s*14\]?,?\s+\[?RFC\s*2119\]?,?\s*
+        as\s+described\s+in\s+\[?BCP\s*14\]?,?\s*\[?RFC\s*2119\]?,?\s*
         (?:and\s+)?\[?RFC\s*8174\]?,?\s+when,\s+and\s+only\s+when,\s+
         they\s+appear\s+in\s+all\s+capitals,\s+as\s+shown\s+
         (?:above|here)\.""",
@@ -251,7 +252,7 @@ def unfold(text: str) -> str:
     folded = re.sub(r"[\r\f]", r"", text)
     folded = re.sub(r"\n{2,}\s*", rand, folded)
     folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
-    folded = re.sub(r"([\-/])\n", r"\1", folded)
+    folded = re.sub(r"([\-/])\n([^\(])", r"\1\2", folded)
     folded = re.sub(r"\n", r" ", folded)
     folded = re.sub(rand, r"\n\n", folded)
 
@@ -895,7 +896,7 @@ def gather_comments(diff: list) -> dict:
 
 def review_item(orig: list, rev: list) -> dict:
     """
-    Calculates a diff between orig and rev..
+    Calculates a diff between orig and rev.
 
     @param      orig  The original text
     @param      rev   The revised text
@@ -966,6 +967,30 @@ def fmt_review(review: dict, width: int) -> None:
                 print(line, end="")
 
 
+def extract_abstract(text: list) -> str:
+    """
+    Return that abstract of the text .
+
+    @param      text  The text to parse for the abstract
+
+    @return     The abstract.
+    """
+    in_abstract = False
+    abstract = ""
+    for line in text.splitlines(keepends=True):
+        pot_sec = SECTION_PATTERN.search(line)
+        if pot_sec:
+            which = pot_sec.group(0)
+            if re.search(r"^Abstract", which):
+                in_abstract = True
+                continue
+            if abstract:
+                break
+        if in_abstract:
+            abstract += line
+    return abstract
+
+
 def extract_refs(text: list) -> dict:
     """
     Return a dict of references found in the text as well as the normative and
@@ -999,7 +1024,7 @@ def extract_refs(text: list) -> dict:
             r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\]"
             + (r"|RFC\d+|draft-[-a-z\d_.]+" if part == "text" else r"")
             + r")",
-            parts[part],
+            unfold(parts[part]),
             re.IGNORECASE,
         )
 
@@ -1190,11 +1215,8 @@ def check_refs(
 
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
-            ntag = untag(tag)
             if doc:
-                name = re.search(
-                    r"^(rfc\d+|(draft-[-a-z\d_.]+)-(\d{2,}))", doc
-                )
+                name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", doc)
             if not doc or not name:
                 log.info(
                     "No metadata available for %s reference %s", kind, tag
@@ -1203,16 +1225,21 @@ def check_refs(
                     result["comment"].append(
                         wrap_para(
                             f"Possible DOWNREF from this {status} doc "
-                            f"to {ntag}.",
+                            f"to {tag}.",
                             width=width,
                         )
                     )
                 continue
 
-            groups = list(name.groups())
-            name = groups[1] if groups[1] else groups[0]
-            name = re.sub(r"rfc0*(\d+)", r"rfc\1", name)
-            rev = groups[2]
+            draft_components = re.search(
+                r"^(draft-.*)-(\d{2,})$", name.group(0)
+            )
+            rev = None
+            if draft_components:
+                name = draft_components.group(1)
+                rev = draft_components.group(2)
+            else:
+                name = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
             meta = fetch_meta(datatracker, name)
 
             latest = get_latest(meta["rev_history"], "published")
@@ -1220,7 +1247,7 @@ def check_refs(
                 if latest["rev"].startswith("rfc"):
                     result["nit"].append(
                         wrap_para(
-                            f"Document still references {name}, but that has "
+                            f"Document references {name}, but that has "
                             f"been published as {latest['rev'].upper()}.",
                             width=width,
                         )
@@ -1228,7 +1255,7 @@ def check_refs(
                 else:
                     result["nit"].append(
                         wrap_para(
-                            f"Document still references {name}-{rev}, but "
+                            f"Document references {name}-{rev}, but "
                             f"-{latest['rev']} is the latest "
                             f"available revision.",
                             width=width,
@@ -1243,7 +1270,7 @@ def check_refs(
                         result["comment"].append(
                             wrap_para(
                                 f"Possible DOWNREF from this {status} doc "
-                                f"to {ntag}.",
+                                f"to {tag}.",
                                 width=width,
                             )
                         )
@@ -1251,7 +1278,7 @@ def check_refs(
                         result["discuss"].append(
                             wrap_para(
                                 f"DOWNREF from this {status} doc to {level} "
-                                f"{ntag}.",
+                                f"{tag}.",
                                 width=width,
                             )
                         )
@@ -1268,7 +1295,7 @@ def check_refs(
                     if "rfc" in obs_by:
                         result["nit"].append(
                             wrap_para(
-                                f"Obsolete reference to {ntag}, "
+                                f"Obsolete reference to {untag(tag)}, "
                                 f"obsoleted by RFC{obs_by['rfc']}.",
                                 width=width,
                             )
@@ -1380,7 +1407,9 @@ def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
     """
     issues = [
         i
-        for i in language_tool_python.LanguageTool("en").check("".join(review))
+        for i in language_tool_python.LanguageTool("en").check(
+            unfold("".join(review))
+        )
         if i.ruleId
         not in [
             "ADVERTISEMENT_OF_FOR",
@@ -1392,12 +1421,17 @@ def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
             "DASH_RULE",
             "DATE_FUTURE_VERB_PAST",
             "EN_QUOTES",
+            "EN_UNPAIRED_BRACKETS",
             "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
+            "I_LOWERCASE",
+            "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
             "KEY_WORDS",
             "MULTIPLICATION_SIGN",
             "PLUS_MINUS",
             "PUNCTUATION_PARAGRAPH_END",
             "RETURN_IN_THE",
+            "SENTENCE_WHITESPACE",
+            "SOME_OF_THE",
             "UPPERCASE_SENTENCE_START",
             "WHITESPACE_RULE",
             "WORD_CONTAINS_UNDERSCORE",
@@ -1527,6 +1561,24 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
 
     status = get_status(text)
     for rel, docs in get_relationships(text).items():
+        if rel == "updates":
+            abstract = extract_abstract(text)
+            if not re.search(r"updates", abstract):
+                if len(docs) == 1:
+                    updates = f"RFC{docs[0]}"
+                else:
+                    updates = "{} and RFC{}".format(
+                        ", ".join([f"RFC{x}" for x in docs[:-1]]), docs[-1]
+                    )
+                result["discuss"].append(
+                    wrap_para(
+                        f"This document updates {updates}, but does not seem "
+                        f"to include explanatory text about this in the "
+                        f"abstract.",
+                        width=width,
+                    )
+                )
+
         for doc in docs:
             meta = fetch_meta(datatracker, "rfc" + doc)
             level = meta["std_level"] or meta["intended_std_level"]
@@ -1604,7 +1656,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             result["comment"].append(
                 wrap_para(
                     f'Using lowercase "not" together with an uppercase '
-                    f"RFC 2119 keyword is not acceptable usage. Found: "
+                    f"RFC2119 keyword is not acceptable usage. Found: "
                     f"{lc_not_str}",
                     width=width,
                 )
@@ -1699,10 +1751,39 @@ def review_items(
                     orig_item,
                 )
                 orig = rev
+            orig_lines = orig.splitlines(keepends=True)
             rev = rev.splitlines(keepends=True)
-            review = review_item(orig.splitlines(keepends=True), rev)
+            review = review_item(orig_lines, rev)
             status = get_status(orig)
             name = basename(item)
+
+            unescaped = html.unescape(orig)
+            if orig != unescaped:
+                entities = []
+                diff = list(
+                    difflib.ndiff(
+                        orig_lines,
+                        unescaped.splitlines(keepends=True),
+                        linejunk=None,
+                        charjunk=None,
+                    )
+                )
+                for line in diff:
+                    if re.search(r"^- ", line):
+                        entities.extend(
+                            re.findall(r"(&#?\w+;)", line, re.IGNORECASE)
+                        )
+
+                if entities:
+                    review["nit"].append(
+                        wrap_para(
+                            f"The text version of this document contains "
+                            f"these HTML entities, which might indicate "
+                            f"issues with its XML source: "
+                            f"{', '.join(set(entities))}",
+                            width=state.width,
+                        )
+                    )
 
             review_extend(review, check_boilerplate(orig, status, state.width))
 
@@ -1735,9 +1816,23 @@ def review_items(
             if chk_urls:
                 result = []
                 urls = extract_urls(orig)
+
+                for url in urls:
+                    if re.search(r"://tools\.ietf\.org", url, re.IGNORECASE):
+                        result.append(url)
+
+                if result:
+                    review["nit"].append(
+                        "These URLs point to tools.ietf.org, which is "
+                        "being deprecated:\n",
+                    )
+                    review["nit"].extend(f" * {line}\n" for line in result)
+                    review["nit"].append("\n")
+
                 reachability = {
                     u: fetch_url(u, state.verbose > 0, "HEAD") for u in urls
                 }
+                result = []
                 for url in urls:
                     if reachability[url] is None:
                         result.append(url)
