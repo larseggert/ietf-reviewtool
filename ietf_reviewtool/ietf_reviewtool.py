@@ -184,7 +184,7 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
                         method,
                         url,
                         allow_redirects=True,
-                        timeout=10,
+                        timeout=20,
                         headers=headers,
                     )
             else:
@@ -192,7 +192,7 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
                     method,
                     url,
                     allow_redirects=True,
-                    timeout=10,
+                    timeout=20,
                     headers=headers,
                 )
             response.raise_for_status()
@@ -544,6 +544,7 @@ def get_items(
     """
     log.debug(items)
     for item in items:
+        do_strip = strip
         file_name = item
         if not file_name.endswith(".txt"):
             file_name += ".txt"
@@ -572,13 +573,14 @@ def get_items(
             url = datatracker + "/doc/" + url_pattern
             # TODO: the charters in rsync don't have milestones, can't use
             # cache = os.getenv("IETF_CHARTERS")
-            strip = False
+            do_strip = False
         elif item.startswith("conflict-review-"):
             doc = re.sub(r"conflict-review-(.*)", r"draft-\1", item)
             text = get_writeups(datatracker, doc)
             # TODO: in-progress conflict-reviews are not in the cache
             # cache = os.getenv("IETF_CONFLICT_REVIEWS")
-            strip = False
+            items.append(doc)
+            do_strip = False
         # else:
         #     die(f"Unknown item type: {item}")
 
@@ -594,7 +596,7 @@ def get_items(
             text = fetch_url(url)
 
         if text is not None:
-            if strip:
+            if do_strip:
                 log.debug("Stripping %s", item)
                 text = strip_pagination(text)
             write(text, file_name)
@@ -1296,7 +1298,8 @@ def check_refs(
                         result["nit"].append(
                             wrap_para(
                                 f"Obsolete reference to {untag(tag)}, "
-                                f"obsoleted by RFC{obs_by['rfc']}.",
+                                f"obsoleted by RFC{obs_by['rfc']} "
+                                f"(this may be on purpose).",
                                 width=width,
                             )
                         )
@@ -1396,7 +1399,12 @@ def check_xml(doc: str) -> None:
         xml.etree.ElementTree.fromstring(text)
 
 
-def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
+def check_grammar(
+    review: str,
+    grammar_skip_rules: str,
+    width: int,
+    show_rule_id: bool = False,
+) -> dict:
     """
     Check document grammar.
 
@@ -1424,6 +1432,7 @@ def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
             "EN_UNPAIRED_BRACKETS",
             "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
             "I_LOWERCASE",
+            "IN_THE_INTERNET",
             "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
             "KEY_WORDS",
             "MULTIPLICATION_SIGN",
@@ -1431,11 +1440,16 @@ def check_grammar(review: str, width: int, show_rule_id: bool = False) -> dict:
             "PUNCTUATION_PARAGRAPH_END",
             "RETURN_IN_THE",
             "SENTENCE_WHITESPACE",
+            "SO_AS_TO",
             "SOME_OF_THE",
             "UPPERCASE_SENTENCE_START",
             "WHITESPACE_RULE",
             "WORD_CONTAINS_UNDERSCORE",
         ]
+        and (
+            not grammar_skip_rules
+            or i.ruleId not in grammar_skip_rules.split(",")
+        )
     ]
 
     para_sec = None
@@ -1698,6 +1712,13 @@ def review_extend(review: dict, extension: dict) -> dict:
     help="Check grammar in the draft for issues.",
 )
 @click.option(
+    "--grammar-skip-rules",
+    "grammar_skip_rules",
+    type=str,
+    help="Don't flag these grammar rules (use LanguageTool rule names, "
+    "separate with commas).",
+)
+@click.option(
     "--check-meta/--no-check-meta",
     "chk_meta",
     default=True,
@@ -1711,6 +1732,7 @@ def review_items(
     chk_refs: bool,
     chk_grammar: bool,
     chk_meta: bool,
+    grammar_skip_rules: str,
 ) -> None:
     """
     Extract reviews from named items.
@@ -1798,7 +1820,10 @@ def review_items(
 
             if chk_grammar:
                 review_extend(
-                    review, check_grammar(rev, state.width, state.verbose > 0)
+                    review,
+                    check_grammar(
+                        rev, grammar_skip_rules, state.width, state.verbose > 0
+                    ),
                 )
 
             if chk_refs:
