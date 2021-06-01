@@ -1259,7 +1259,7 @@ def check_refs(
                 rev = draft_components.group(2)
             else:
                 name = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
-            meta = fetch_meta(datatracker, name)
+            meta = fetch_meta(datatracker, basename(name))
 
             latest = get_latest(meta["rev_history"], "published")
             if latest["rev"] and rev and latest["rev"] > rev:
