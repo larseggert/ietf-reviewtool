@@ -579,7 +579,24 @@ def get_items(
             text = get_writeups(datatracker, doc)
             # TODO: in-progress conflict-reviews are not in the cache
             # cache = os.getenv("IETF_CONFLICT_REVIEWS")
-            items.append(doc)
+            doc = basename(doc)
+            target = fetch_dt(
+                datatracker,
+                "relateddocument/?relationship__slug=conflrev&target__name="
+                + doc,
+            )
+            if not target:
+                log.warning("cannot find target for %s", doc)
+                continue
+            docalias = fetch_dt(datatracker, target[0]["target"])
+            if not docalias:
+                log.warning("cannot find docalias for %s", target[0]["target"])
+                continue
+            doc = fetch_dt(datatracker, docalias["document"])
+            if not doc:
+                log.warning("cannot find doc for %s", docalias["document"])
+                continue
+            items.append(f"{doc['name']}-{doc['rev']}.txt")
             do_strip = False
         # else:
         #     die(f"Unknown item type: {item}")
