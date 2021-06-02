@@ -35,13 +35,13 @@ import tempfile
 import textwrap
 import urllib.parse
 import xml.etree.ElementTree
-import yaml
 
 import appdirs
 import click
 import language_tool_python
 import requests
 import requests_cache
+import yaml
 
 log = logging.getLogger(__name__)
 
@@ -949,6 +949,24 @@ def wrap_para(text: str, width: int = 79, end: str = "\n\n"):
     return textwrap.fill(text, width=width, break_on_hyphens=False) + end
 
 
+def bulletize(text: str, width: int = 79, end: str = "\n\n"):
+    """
+    Return a wrapped version of the text, ending with end, as a bullet item.
+
+    @param      text   The text to wrap
+    @param      width  The width to wrap to
+    @param      end    The end to add to the text
+
+    @return     Wrapped version of text followed by end, formatted as bullet
+                item.
+    """
+    return textwrap.indent(
+        wrap_para(" * " + text, width - 3, end),
+        "   ",
+        lambda line: not line.startswith(" * "),
+    )
+
+
 def fmt_review(review: dict, width: int) -> None:
     """
     Format a review dict for datatracker submission.
@@ -1160,7 +1178,7 @@ def wrap_and_indent(text: str, width: int = 50) -> str:
     )
 
 
-def check_inclusivity(text: str, width: int) -> dict:
+def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     """
     Check document terminology for potential inclusivity issues.
 
@@ -1190,7 +1208,16 @@ def check_inclusivity(text: str, width: int) -> dict:
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
             hits = re.findall(pattern, text, re.IGNORECASE)
             for hit in hits:
-                result.append((name, hit[0], pattern))
+                result.append(
+                    (
+                        name,
+                        hit[0],
+                        pattern,
+                        data["alternatives"]
+                        if "alternatives" in data
+                        else None,
+                    )
+                )
 
     if result:
         review["comment"].append(
@@ -1203,13 +1230,15 @@ def check_inclusivity(text: str, width: int) -> dict:
         for match in [
             next(g) for _, g in itertools.groupby(result, key=lambda x: x[1])
         ]:
-            review["comment"].extend(
-                wrap_para(
-                    f' * Term "{match[1]}" (matched "{match[0]}" rule)\n',
-                    width=width,
-                    end="\n",
-                )
-            )
+            msg = f'Term "{match[1]}"; '
+            if match[3]:
+                msg += "alternatives might be "
+                msg += ", ".join([f'"{a}"' for a in match[3]])
+            else:
+                msg += "but I have no suggestion for an alternative"
+            if verbose:
+                msg += f' (matched "{match[0]}" rule, pattern {match[2]})'
+            review["comment"].extend(bulletize(msg, width=width, end=".\n"))
         review["comment"].append("\n")
 
     return review
@@ -1973,7 +2002,9 @@ def review_items(
             if chk_inclusivity:
                 review_extend(
                     review,
-                    check_inclusivity(unfold("".join(rev)), state.width),
+                    check_inclusivity(
+                        unfold("".join(rev)), state.width, verbose
+                    ),
                 )
 
             fmt_review(review, state.width)
