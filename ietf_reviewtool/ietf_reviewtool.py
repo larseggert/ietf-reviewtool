@@ -24,6 +24,7 @@ SPDX-License-Identifier: GPL-2.0
 import datetime
 import difflib
 import html
+import itertools
 import json
 import logging
 import math
@@ -34,6 +35,7 @@ import tempfile
 import textwrap
 import urllib.parse
 import xml.etree.ElementTree
+import yaml
 
 import appdirs
 import click
@@ -1162,6 +1164,61 @@ def wrap_and_indent(text: str, width: int = 50) -> str:
     )
 
 
+def check_inclusivity(text: str, width: int) -> dict:
+    """
+    Check document terminology for potential inclusivity issues.
+
+    @param      text   The document text
+    @param      width  The width the issues should be wrapped to
+
+    @return     List of possible inclusivity issues.
+    """
+    review = {"discuss": [], "comment": [], "nit": []}
+    isb_url = (
+        "https://raw.githubusercontent.com/"
+        "NTAP/isb-ietf-config/main/.github/in-solidarity.yml"
+    )
+    isb_yaml = fetch_url(isb_url)
+    # isb_yaml = read(
+    #     "/Users/lars/Documents/Code/isb-ietf-config/.github/in-solidarity.yml"
+    # )
+
+    if not isb_yaml:
+        log.info("Could not fetch in-solidarity.yml from %s", isb_url)
+        return review
+    rules = yaml.safe_load(isb_yaml)
+
+    result = []
+    for name, data in rules["rules"].items():
+        for pattern in data["regex"]:
+            pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
+            hits = re.findall(pattern, text, re.IGNORECASE)
+            for hit in hits:
+                result.append((name, hit[0], pattern))
+
+    if result:
+        review["comment"].append(
+            wrap_para(
+                "Found terminology that should be reviewed for inclusivity:",
+                width=width,
+                end="\n",
+            )
+        )
+        for match in [
+            next(g) for _, g in itertools.groupby(result, key=lambda x: x[1])
+        ]:
+            review["comment"].extend(
+                wrap_para(
+                    f' * Term "{match[1]}" (matched "{match[0]}" rule)\n',
+                    width=width,
+                    end="\n",
+                )
+            )
+        review["comment"].append("\n")
+
+    return review
+
+
 def check_refs(
     datatracker: str, refs: dict, width: int, name: str, status: str
 ) -> dict:
@@ -1326,11 +1383,11 @@ def check_refs(
 
 def get_status(doc: str) -> str:
     """
-    Extract the standards level status of a given document..
+    Extract the standards level status of a given document.
 
     @param      doc   The document to extract the level from
 
-    @return     The status of the document..
+    @return     The status of the document.
     """
     status = re.search(
         r"^(?:[Ii]ntended )?[Ss]tatus:\s*((?:\w+\s)+)",
@@ -1741,6 +1798,12 @@ def review_extend(review: dict, extension: dict) -> dict:
     default=True,
     help="Check metadata of the draft for issues.",
 )
+@click.option(
+    "--check-inclusivity/--no-check-inclusivity",
+    "chk_inclusivity",
+    default=True,
+    help="Check text for inclusive language issues.",
+)
 @click.pass_obj
 def review_items(
     state: object,
@@ -1749,6 +1812,7 @@ def review_items(
     chk_refs: bool,
     chk_grammar: bool,
     chk_meta: bool,
+    chk_inclusivity: bool,
     grammar_skip_rules: str,
 ) -> None:
     """
@@ -1902,6 +1966,12 @@ def review_items(
                     )
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
+
+            if chk_inclusivity:
+                review_extend(
+                    review,
+                    check_inclusivity(unfold("".join(rev)), state.width),
+                )
 
             fmt_review(review, state.width)
 
