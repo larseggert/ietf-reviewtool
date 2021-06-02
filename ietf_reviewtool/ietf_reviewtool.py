@@ -199,9 +199,9 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
                 )
             response.raise_for_status()
         except requests.exceptions.RequestException as err:
-            log.error("%s -> %s", url, err)
+            log.debug("%s -> %s", url, err)
             if method == "HEAD":
-                log.info("Retrying %s with GET", url)
+                log.debug("Retrying %s with GET", url)
                 method = "GET"
                 continue
             return None
@@ -217,13 +217,11 @@ def read(file_name: str) -> str:
     @return     The content of the item.
     """
     try:
-        file = open(file_name, "r")
+        with open(file_name, "r") as file:
+            return file.read()
     except FileNotFoundError as err:
         log.error("%s -> %s", file_name, err)
         return None
-    text = file.read()
-    file.close()
-    return text
 
 
 def write(text: str, file_name: str) -> None:
@@ -235,10 +233,8 @@ def write(text: str, file_name: str) -> None:
 
     @return     -
     """
-    file = open(file_name, "w")
-    text = file.write(text)
-    file.close()
-    return text
+    with open(file_name, "w") as file:
+        file.write(text)
 
 
 def unfold(text: str) -> str:
@@ -1754,6 +1750,15 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
 
 
 def review_extend(review: dict, extension: dict) -> dict:
+    """
+    Extend the review with the lines in extensions by appending them to the
+    various categories.
+
+    @param      review     The review
+    @param      extension  The extension
+
+    @return     The extended review.
+    """
     for cat in review:
         if cat in extension:
             review[cat].extend(extension[cat])
@@ -1898,12 +1903,12 @@ def review_items(
                 )
 
             check_xml(orig)
-
+            verbose = state.verbose > 0
             if chk_grammar:
                 review_extend(
                     review,
                     check_grammar(
-                        rev, grammar_skip_rules, state.width, state.verbose > 0
+                        rev, grammar_skip_rules, state.width, verbose
                     ),
                 )
 
@@ -1935,9 +1940,7 @@ def review_items(
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
 
-                reachability = {
-                    u: fetch_url(u, state.verbose > 0, "HEAD") for u in urls
-                }
+                reachability = {u: fetch_url(u, verbose, "HEAD") for u in urls}
                 result = []
                 for url in urls:
                     if reachability[url] is None:
@@ -1951,13 +1954,13 @@ def review_items(
                     review["nit"].append("\n")
 
                 result = []
-                urls = [u for u in urls if u.startswith("http:")]
-                reachability = {
-                    u: fetch_url(u, state.verbose > 0, "HEAD") for u in urls
-                }
                 for url in urls:
+                    if url.startswith("https:"):
+                        continue
                     if reachability[url] is not None:
-                        result.append(url)
+                        test_url = re.sub(r"^http:", r"https:", url)
+                        if fetch_url(test_url, verbose, "HEAD") is not None:
+                            result.append(url)
 
                 if result:
                     review["nit"].append(
