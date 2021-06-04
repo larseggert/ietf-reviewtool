@@ -98,13 +98,25 @@ BOILERPLATE_BEGIN_PATTERN = re.compile(
 
 
 class State:
-    def __init__(self, datatracker=None, verbose=0, width=79):
+    def __init__(self, datatracker=None, verbose=0, default=True, width=79):
         self.datatracker = datatracker
         self.verbose = verbose
         self.width = width
+        self.default = default
 
 
-@click.group(help="Review tool for IETF documents.")
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
+
+
+@click.group(
+    help="Review tool for IETF documents.", context_settings=CONTEXT_SETTINGS
+)
+@click.option(
+    "--default-enable/--no-default-enable",
+    "default",
+    default=True,
+    help="Whether all checks are enabled by default.",
+)
 @click.option(
     "--verbose",
     "-v",
@@ -114,6 +126,7 @@ class State:
 )
 @click.option(
     "--datatracker",
+    "-d",
     default="https://datatracker.ietf.org/",
     help="IETF Datatracker base URL.",
 )
@@ -124,9 +137,11 @@ class State:
     help="Wrap the review to this character width.",
 )
 @click.pass_context
-def cli(ctx: object, datatracker: str, verbose: int, width: int) -> None:
+def cli(
+    ctx: object, datatracker: str, verbose: int, default: bool, width: int
+) -> None:
     datatracker = re.sub(r"/+$", "", datatracker)
-    ctx.obj = State(datatracker, verbose, width)
+    ctx.obj = State(datatracker, verbose, default, width)
     log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
 
     cache = appdirs.user_cache_dir("ietf-reviewtool")
@@ -1815,19 +1830,19 @@ def review_extend(review: dict, extension: dict) -> dict:
 @click.option(
     "--check-urls/--no-check-urls",
     "chk_urls",
-    default=True,
+    default=None,
     help="Check if URLs resolve.",
 )
 @click.option(
     "--check-refs/--no-check-refs",
     "chk_refs",
-    default=True,
+    default=None,
     help="Check references in the draft for issues.",
 )
 @click.option(
     "--check-grammar/--no-check-grammar",
     "chk_grammar",
-    default=True,
+    default=None,
     help="Check grammar in the draft for issues.",
 )
 @click.option(
@@ -1840,25 +1855,25 @@ def review_extend(review: dict, extension: dict) -> dict:
 @click.option(
     "--check-meta/--no-check-meta",
     "chk_meta",
-    default=True,
+    default=None,
     help="Check metadata of the draft for issues.",
 )
 @click.option(
     "--check-inclusivity/--no-check-inclusivity",
-    "chk_inclusivity",
-    default=True,
+    "chk_inclusiv",
+    default=None,
     help="Check text for inclusive language issues.",
 )
 @click.option(
     "--check-boilerplate/--no-check-boilerplate",
-    "chk_boilerplate",
-    default=True,
+    "chk_boilerpl",
+    default=None,
     help="Check boilerplate text for issues.",
 )
 @click.option(
     "--check-misc/--no-check-misc",
     "chk_misc",
-    default=True,
+    default=None,
     help="Check text for miscellaneous issues.",
 )
 @click.pass_obj
@@ -1869,8 +1884,8 @@ def review_items(
     chk_refs: bool,
     chk_grammar: bool,
     chk_meta: bool,
-    chk_inclusivity: bool,
-    chk_boilerplate: bool,
+    chk_inclusiv: bool,
+    chk_boilerpl: bool,
     chk_misc: bool,
     grammar_skip_rules: str,
 ) -> None:
@@ -1883,6 +1898,17 @@ def review_items(
 
     @return     -
     """
+
+    chk_urls = state.default if chk_urls is None else chk_urls
+    chk_refs = state.default if chk_refs is None else chk_refs
+    chk_grammar = state.default if chk_grammar is None else chk_grammar
+    chk_meta = state.default if chk_meta is None else chk_meta
+    chk_inclusiv = state.default if chk_inclusiv is None else chk_inclusiv
+    chk_boilerpl = (
+        state.default if chk_boilerpl is None else chk_boilerpl
+    )
+    chk_misc = state.default if chk_misc is None else chk_misc
+
     log.debug(items)
     current_directory = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
@@ -1948,7 +1974,7 @@ def review_items(
                             )
                         )
 
-            if chk_boilerplate:
+            if chk_boilerpl:
                 review_extend(
                     review, check_boilerplate(orig, status, state.width)
                 )
@@ -2028,7 +2054,7 @@ def review_items(
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
 
-            if chk_inclusivity:
+            if chk_inclusiv:
                 review_extend(
                     review,
                     check_inclusivity(
