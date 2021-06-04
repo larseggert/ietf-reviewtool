@@ -40,7 +40,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
 name = "language-tool-python"
-version = "2.5.3"
+version = "2.5.4"
 description = "Checks grammar using LanguageTool."
 category = "main"
 optional = false
@@ -140,8 +140,8 @@ idna = [
     {file = "idna-2.10.tar.gz", hash = "sha256:b307872f855b18632ce0c21c5e45be78c0ea7ae4c15c828c20788b26921eb3f6"},
 ]
 language-tool-python = [
-    {file = "language_tool_python-2.5.3-py3-none-any.whl", hash = "sha256:fe97b4bafc2d6728e3f63c6c3d10da40b84e681538308ec06ef0ba44fd07d62c"},
-    {file = "language_tool_python-2.5.3.tar.gz", hash = "sha256:0df6f80b1f6f656e29186b8cb12299f61a7387c53b833df0c85980f25f8ee3f9"},
+    {file = "language_tool_python-2.5.4-py3-none-any.whl", hash = "sha256:1098458c7654692c08e33e97f59f2ef3d76cdffdac11a05404ebd521f2d89182"},
+    {file = "language_tool_python-2.5.4.tar.gz", hash = "sha256:2e52386ee0708eaa242c58b706a9439dbe20882f90721fc364dac59344fa742f"},
 ]
 pyyaml = [
     {file = "PyYAML-5.4.1-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:3b2b1824fe7112845700f815ff6a489360226a5609b96ec2190a45e62a9fc922"},
