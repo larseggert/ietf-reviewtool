@@ -554,7 +554,7 @@ def get_items(
             log.warning("%s exists, skipping", file_name)
             continue
 
-        log.info("Getting %s", item)
+        log.debug("Getting %s", item)
         cache = None
         text = None
         url = None
@@ -990,16 +990,24 @@ def fmt_review(review: dict, width: int) -> None:
         ),
     }
 
+    used_categories = 0
     for category in boilerplate:
         if review[category]:
+            used_categories += 1
+
+    for category in boilerplate:
+        if not review[category]:
+            continue
+
+        if used_categories > 1:
             print("-" * width)
             print(category.upper())
             print("-" * width)
             if boilerplate[category]:
                 print(wrap_para(boilerplate[category], width=width, end="\n"))
 
-            for line in review[category]:
-                print(line, end="")
+        for line in review[category]:
+            print(line, end="")
 
 
 def extract_abstract(text: list) -> str:
@@ -1585,9 +1593,12 @@ def check_grammar(
         message = (
             issue.message.replace("“", '"')
             .replace("”", '"')
-            .replace("‘", "'")
-            .replace("’", "'")
+            .replace("‘", '"')
+            .replace("’", '"')
         )
+
+        if not re.search(r".*[.!?]$", message):
+            message += "."
 
         if show_rule_id:
             message = f"{message} [{issue.ruleId}]"
@@ -1838,6 +1849,18 @@ def review_extend(review: dict, extension: dict) -> dict:
     default=True,
     help="Check text for inclusive language issues.",
 )
+@click.option(
+    "--check-boilerplate/--no-check-boilerplate",
+    "chk_boilerplate",
+    default=True,
+    help="Check boilerplate text for issues.",
+)
+@click.option(
+    "--check-misc/--no-check-misc",
+    "chk_misc",
+    default=True,
+    help="Check text for miscellaneous issues.",
+)
 @click.pass_obj
 def review_items(
     state: object,
@@ -1847,6 +1870,8 @@ def review_items(
     chk_grammar: bool,
     chk_meta: bool,
     chk_inclusivity: bool,
+    chk_boilerplate: bool,
+    chk_misc: bool,
     grammar_skip_rules: str,
 ) -> None:
     """
@@ -1894,35 +1919,39 @@ def review_items(
             status = get_status(orig)
             name = basename(item)
 
-            unescaped = html.unescape(orig)
-            if orig != unescaped:
-                entities = []
-                diff = list(
-                    difflib.ndiff(
-                        orig_lines,
-                        unescaped.splitlines(keepends=True),
-                        linejunk=None,
-                        charjunk=None,
+            if chk_misc:
+                unescaped = html.unescape(orig)
+                if orig != unescaped:
+                    entities = []
+                    diff = list(
+                        difflib.ndiff(
+                            orig_lines,
+                            unescaped.splitlines(keepends=True),
+                            linejunk=None,
+                            charjunk=None,
+                        )
                     )
+                    for line in diff:
+                        if re.search(r"^- ", line):
+                            entities.extend(
+                                re.findall(r"(&#?\w+;)", line, re.IGNORECASE)
+                            )
+
+                    if entities:
+                        review["nit"].append(
+                            wrap_para(
+                                f"The text version of this document contains "
+                                f"these HTML entities, which might indicate "
+                                f"issues with its XML source: "
+                                f"{', '.join(set(entities))}",
+                                width=state.width,
+                            )
+                        )
+
+            if chk_boilerplate:
+                review_extend(
+                    review, check_boilerplate(orig, status, state.width)
                 )
-                for line in diff:
-                    if re.search(r"^- ", line):
-                        entities.extend(
-                            re.findall(r"(&#?\w+;)", line, re.IGNORECASE)
-                        )
-
-                if entities:
-                    review["nit"].append(
-                        wrap_para(
-                            f"The text version of this document contains "
-                            f"these HTML entities, which might indicate "
-                            f"issues with its XML source: "
-                            f"{', '.join(set(entities))}",
-                            width=state.width,
-                        )
-                    )
-
-            review_extend(review, check_boilerplate(orig, status, state.width))
 
             meta = fetch_meta(state.datatracker, name)
             if chk_meta and meta:
