@@ -1904,9 +1904,7 @@ def review_items(
     chk_grammar = state.default if chk_grammar is None else chk_grammar
     chk_meta = state.default if chk_meta is None else chk_meta
     chk_inclusiv = state.default if chk_inclusiv is None else chk_inclusiv
-    chk_boilerpl = (
-        state.default if chk_boilerpl is None else chk_boilerpl
-    )
+    chk_boilerpl = state.default if chk_boilerpl is None else chk_boilerpl
     chk_misc = state.default if chk_misc is None else chk_misc
 
     log.debug(items)
