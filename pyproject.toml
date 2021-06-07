@@ -9,7 +9,7 @@ repository = "https://github.com/larseggert/ietf-reviewtool"
 license = "GPL-2.0-only"
 
 [tool.poetry.dependencies]
-python = "~3.6"
+python = "^3, >=3.6"
 requests-cache = "^0.5.2"
 appdirs = "^1.4.4"
 click = "^7.1.2"
