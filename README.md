@@ -27,6 +27,14 @@ there is a chance this documentation only covers a subset of what the actual
 tool offers. You can get command line help on the various tools by passing
 `--help` to `ietf-reviewtool` and its sub-tools.
 
+## Installation
+
+You can install this via [PyPI](https://pypi.org/project/ietf-reviewtool/):
+
+``` shell
+pip install ietf-reviewtool
+```
+
 ## Usage
 
 An example workflow of the tool is as follows.
