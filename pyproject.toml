@@ -20,6 +20,7 @@ PyYAML = "^5.4.1"
 
 [tool.poetry.scripts]
 irt = "ietf_reviewtool.ietf_reviewtool:cli"
+ietf-reviewtool = "ietf_reviewtool.ietf_reviewtool:cli"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
