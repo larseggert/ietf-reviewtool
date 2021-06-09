@@ -19,11 +19,10 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
-import importlib
 import re
 import unittest
 
-irt = importlib.import_module("ietf-reviewtool")
+import ietf_reviewtool.ietf_reviewtool as irt
 
 
 def munge(text: str, repl=r"word") -> str:
@@ -57,7 +56,7 @@ class TestReviewItem(unittest.TestCase):
         if result != expected_result:
             print(review)
             print(result)
-            print(irt.fmt_review(result))
+            print(irt.fmt_review(result, 79))
         self.assertEqual(result, expected_result)
 
     def test_all_empty(self):
@@ -66,7 +65,9 @@ class TestReviewItem(unittest.TestCase):
 
     def test_review_empty(self):
         """Dummy document, empty review."""
-        self.compute_and_verify_result(self.single_line, "", self.empty_review)
+        self.compute_and_verify_result(
+            self.single_line, self.single_line, self.empty_review
+        )
 
     def test_single_line_inline_nits(self):
         """Single line, only inline nits."""
