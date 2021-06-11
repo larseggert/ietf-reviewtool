@@ -49,7 +49,7 @@ log = logging.getLogger(__name__)
 SECTION_PATTERN = re.compile(
     r"""^(?:[\- ]\s)?(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
         Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
-        (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?|
+        (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?\s|
         \d+(?:\.\d+)*\.?)(.*)""",
     re.VERBOSE,
 )
@@ -293,6 +293,7 @@ def extract_urls(
         re.IGNORECASE,
     )
     urls = [u.rstrip(".\"'>;") for u in urls]
+    urls = [u for u in urls if urllib.parse.urlparse(u).netloc]
 
     if not examples:
         # remove example URLs
@@ -302,6 +303,7 @@ def extract_urls(
             if not re.search(
                 r"example\.(?:com|net|org)|\.example$",
                 urllib.parse.urlparse(u).netloc,
+                re.IGNORECASE,
             )
         ]
 
@@ -317,7 +319,7 @@ def extract_urls(
                     (www\.)?rfc-editor\.org/info/rfc\d+|
                     (www\.)?ietf\.org/archive/id/draft-""",
                 u,
-                flags=re.VERBOSE,
+                flags=re.VERBOSE | re.IGNORECASE,
             )
         ]
 
@@ -690,7 +692,7 @@ def section_and_paragraph(
     )
 
     # track paragraphs
-    pat = {True: r"^[\- ] +$", False: r"^ *$"}
+    pat = {True: r"^[\- ] +$", False: r"^\s*$"}
     if re.search(pat[is_diff], cur):
         para += 1
 
@@ -788,7 +790,11 @@ def gather_nits(diff: list) -> list:
             changed[kind].append(cur)
             indicator[kind].append(None)
 
-        elif kind in ["-"] and nxt_kind == "+":
+        elif kind == "-" and nxt_kind == "+":
+            changed[kind].append(cur)
+            indicator[kind].append(None)
+
+        elif kind == "+" and prev == "-":
             changed[kind].append(cur)
             indicator[kind].append(None)
 
@@ -1018,8 +1024,9 @@ def fmt_review(review: dict, width: int) -> None:
             print("-" * width)
             print(category.upper())
             print("-" * width)
-            if boilerplate[category]:
-                print(wrap_para(boilerplate[category], width=width, end="\n"))
+
+        if boilerplate[category]:
+            print(wrap_para(boilerplate[category], width=width, end="\n"))
 
         for line in review[category]:
             print(line, end="")
@@ -1056,7 +1063,7 @@ def extract_refs(text: list) -> dict:
 
     @param      text  The text to parse for references
 
-    @return     A dict with lists of found references.
+    @return     A dict with sets of found references.
     """
     parts = {"text": "", "informative": "", "normative": ""}
     part = "text"
@@ -1085,6 +1092,7 @@ def extract_refs(text: list) -> dict:
             unfold(parts[part]),
             re.IGNORECASE,
         )
+        refs[part] = {f"[{untag(ref)}]" for ref in refs[part]}
 
     resolved = {}
     for part in ["informative", "normative"]:
@@ -1268,13 +1276,19 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
 
 
 def check_refs(
-    datatracker: str, refs: dict, width: int, name: str, status: str
+    datatracker: str,
+    refs: dict,
+    rels: dict,
+    width: int,
+    name: str,
+    status: str,
 ) -> dict:
     """
     Check the references.
 
     @param      datatracker  The datatracker URL to use
     @param      refs         The references to check
+    @param      rels         The relationship of this document to others
     @param      width        The width to wrap to
     @param      name         The name of this document.
     @param      status       The standards level of the given document
@@ -1337,6 +1351,21 @@ def check_refs(
             wrap_para(f"Uncited references: {ref_list}.", width=width)
         )
 
+    for rel, docs in rels.items():
+        for doc in docs:
+            ref = f"rfc{doc}"
+            in_normative = ref in [x[1] for x in refs["normative"]]
+            in_informative = ref in [x[1] for x in refs["informative"]]
+
+            if not in_normative and not in_informative:
+                result["comment"].append(
+                    wrap_para(
+                        f"Document {rel} RFC{doc}, but does not cite it as a "
+                        f"reference.",
+                        width=width,
+                    )
+                )
+
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
             if doc:
@@ -1349,7 +1378,7 @@ def check_refs(
                     result["comment"].append(
                         wrap_para(
                             f"Possible DOWNREF from this {status} doc "
-                            f"to {tag}.",
+                            f"to {tag}. If so, the IESG needs to approve it.",
                             width=width,
                         )
                     )
@@ -1413,7 +1442,7 @@ def check_refs(
             )
             if obsoleted_by:
                 if len(obsoleted_by) > 1:
-                    log.warning("%s obsoleted by more than one doc", name)
+                    log.debug("%s obsoleted by more than one doc", name)
                 else:
                     obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
                     if "rfc" in obs_by:
@@ -1476,12 +1505,15 @@ def get_relationships(
     pat = {"updates": r"[Uu]pdates", "obsoletes": r"[Oo]bsoletes"}
     for rel in ["updates", "obsoletes"]:
         match = re.search(
-            r"^" + pat[rel] + r":\s*((?:(?:RFC\s*)?\d{3,},?\s*)+)",
+            r"^"
+            + pat[rel]
+            + r":\s*((?:(?:RFC\s*)?\d{3,},?\s*)+)"
+            + r"(?:.*[\n\r\s]+((?:(?:RFC\s*)?\d{3,},?\s*)+)?)?",
             doc,
             re.MULTILINE,
         )
         if match:
-            result[rel] = match.group(1)
+            result[rel] = "".join([group for group in match.groups() if group])
             result[rel] = re.sub(r"\s", r"", result[rel])
             result[rel] = result[rel].split(",")
     return result
@@ -1640,7 +1672,7 @@ def relationship_ok(status: str, level: str) -> bool:
         "draft standard",
         "internet standard",
     ]
-    return (level.lower() in std) == (status.lower() in std)
+    return (status.lower() in std) or (level.lower() not in std)
 
 
 def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
@@ -1724,8 +1756,8 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
             if not relationship_ok(status, level):
                 result["discuss"].append(
                     wrap_para(
-                        f"This {status} document {rel} {doc}, "
-                        f"which is a {level}.",
+                        f"This {status} document {rel} RFC{doc}, "
+                        f"which is {level}.",
                         width=width,
                     )
                 )
@@ -2000,6 +2032,7 @@ def review_items(
                     check_refs(
                         state.datatracker,
                         extract_refs(orig),
+                        get_relationships(orig),
                         state.width,
                         name,
                         status,
