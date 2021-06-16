@@ -37,6 +37,7 @@ import urllib.parse
 import xml.etree.ElementTree
 
 import appdirs
+import cchardet as chardet
 import click
 import language_tool_python
 import requests
@@ -232,8 +233,12 @@ def read(file_name: str) -> str:
     @return     The content of the item.
     """
     try:
-        with open(file_name, "r") as file:
-            return file.read()
+        with open(file_name, "rb") as file:
+            raw = file.read()
+            encoding = chardet.detect(raw)["encoding"]
+            if encoding is None:
+                encoding = "utf-8"
+            return raw.decode(encoding)
     except FileNotFoundError as err:
         log.error("%s -> %s", file_name, err)
         return None
@@ -265,11 +270,48 @@ def unfold(text: str) -> str:
     folded = re.sub(r"[\r\f]", r"", text)
     folded = re.sub(r"\n{2,}\s*", rand, folded)
     folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
+    folded = re.sub(
+        r"[^a-z]([a-z]{2,})://", r" \1://", folded, flags=re.IGNORECASE
+    )
     folded = re.sub(r"([\-/])\n([^\(])", r"\1\2", folded)
     folded = re.sub(r"\n", r" ", folded)
     folded = re.sub(rand, r"\n\n", folded)
 
     return folded
+
+
+@click.command("extract-urls", help="Extract URLs from items.")
+@click.argument("items", nargs=-1)
+@click.option(
+    "--include-example/--no-include-example",
+    "examples",
+    default=False,
+    help="Include URLs for example domains, such as example.com.",
+)
+@click.option(
+    "--include-common/--no-include-common",
+    "common",
+    default=True,
+    help="Include URLs that are common in IETF documents "
+    "(e.g., from the boilerplate).",
+)
+def extract_urls_from_items(
+    items: list, examples: bool = False, common: bool = True
+) -> None:
+    urls = set()
+    for item in items:
+        if not os.path.isfile(item):
+            log.warning("%s does not exist, skipping", item)
+            continue
+
+        log.debug("Extracting URLs from %s", item)
+        text = strip_pagination(read(item))
+
+        if text is not None:
+            urls |= extract_urls(read(item), examples, common)
+
+    for url in urls:
+        print(url)
 
 
 def extract_urls(
@@ -287,13 +329,22 @@ def extract_urls(
 
     # find all URLs
     text = unfold(text)
-    urls = re.findall(
-        r"(?:https?|ftp)://(?:-\.)?(?:[^\s/?\.#)]+\.?)+(?:/[^\s)\">;]*)?",
+    urls = []
+    for url in re.findall(
+        r"(?:[a-z]{2,})://(?:-\.)?(?:[^\s/?\.#)]+\.?)+(?:/[^\s)\">;]*)?",
         text,
         re.IGNORECASE,
-    )
-    urls = [u.rstrip(".\"'>;") for u in urls]
-    urls = [u for u in urls if urllib.parse.urlparse(u).netloc]
+    ):
+        url = re.sub(r"(.*)[\"\']\s*\]\s*$", r"\1", url)
+        url = url.rstrip(".\"'>;,")
+        if not re.search(r"\[", url):
+            url = url.rstrip("]")
+        try:
+            urllib.parse.urlparse(url).netloc
+        except ValueError as err:
+            log.warning("%s: %s", err, url)
+            continue
+        urls.append(url)
 
     if not examples:
         # remove example URLs
@@ -557,7 +608,6 @@ def get_items(
 
     @return     -
     """
-    log.debug(items)
     for item in items:
         do_strip = strip
         file_name = item
@@ -654,7 +704,6 @@ def strip_items(items: list, in_place: bool = False) -> None:
 
     @return     -
     """
-    log.debug(items)
     for item in items:
         if not os.path.isfile(item):
             log.warning("%s does not exist, skipping", item)
@@ -1939,7 +1988,6 @@ def review_items(
     chk_boilerpl = state.default if chk_boilerpl is None else chk_boilerpl
     chk_misc = state.default if chk_misc is None else chk_misc
 
-    log.debug(items)
     current_directory = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         log.debug("tmp dir %s", tmp)
@@ -1949,7 +1997,6 @@ def review_items(
                     dir_item = os.path.join(item, dir_item)
                     if os.path.isfile(dir_item) and dir_item.endswith(".txt"):
                         items.append(dir_item)
-                log.debug(items)
                 continue
 
             if not os.path.isfile(item):
@@ -2150,10 +2197,11 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
         os.chdir(current_directory)
 
 
-cli.add_command(fetch_agenda)
+cli.add_command(extract_urls_from_items)
 cli.add_command(fetch)
-cli.add_command(strip_items)
+cli.add_command(fetch_agenda)
 cli.add_command(review_items)
+cli.add_command(strip_items)
 
 if __name__ == "__main__":
     cli()
