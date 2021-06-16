@@ -217,7 +217,8 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
         except requests.exceptions.RequestException as err:
             log.debug("%s -> %s", url, err)
             if method == "HEAD":
-                log.debug("Retrying %s with GET", url)
+                log.debug("Retrying %s with Range-header GET", url)
+                headers["Range"] = "bytes=0-100"
                 method = "GET"
                 continue
             return None
