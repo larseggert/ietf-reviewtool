@@ -1274,9 +1274,6 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
         "NTAP/isb-ietf-config/main/.github/in-solidarity.yml"
     )
     isb_yaml = fetch_url(isb_url)
-    # isb_yaml = read(
-    #     "/Users/lars/Documents/Code/isb-ietf-config/.github/in-solidarity.yml"
-    # )
 
     if not isb_yaml:
         log.info("Could not fetch in-solidarity.yml from %s", isb_url)
@@ -1303,9 +1300,11 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     if result:
         review["comment"].append(
             wrap_para(
-                "Found terminology that should be reviewed for inclusivity:",
+                "Found terminology that should be reviewed for inclusivity; "
+                "see https://www.rfc-editor.org/part2/#inclusive_language "
+                "for background and more guidance:",
                 width=width,
-                end="\n",
+                end="\n\n",
             )
         )
         for match in [
@@ -1319,8 +1318,7 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
                 msg += "but I have no suggestion for an alternative"
             if verbose:
                 msg += f' (matched "{match[0]}" rule, pattern {match[2]})'
-            review["comment"].extend(bulletize(msg, width=width, end=".\n"))
-        review["comment"].append("\n")
+            review["comment"].extend(bulletize(msg, width=width, end=".\n\n"))
 
     return review
 
@@ -1397,9 +1395,7 @@ def check_refs(
 
     if both - text:
         ref_list = wrap_and_indent(", ".join(both - text), width=width)
-        result["nit"].append(
-            wrap_para(f"Uncited references: {ref_list}.", width=width)
-        )
+        result["nit"].append(f"Uncited references: {ref_list}\n\n")
 
     for rel, docs in rels.items():
         for doc in docs:
@@ -1564,8 +1560,8 @@ def get_relationships(
         )
         if match:
             result[rel] = "".join([group for group in match.groups() if group])
-            result[rel] = re.sub(r"\s", r"", result[rel])
-            result[rel] = result[rel].split(",")
+            result[rel] = re.sub(r"[,\s]+(\w)", r",\1", result[rel])
+            result[rel] = result[rel].strip().split(",")
     return result
 
 
@@ -1627,6 +1623,8 @@ def check_grammar(
             "ADVERTISEMENT_OF_FOR",
             "ALL_OF_THE",
             "ARROWS",
+            "BOTH_AS_WELL_AS",
+            "COMMA_COMPOUND_SENTENCE",
             "COMMA_PARENTHESIS_WHITESPACE",
             "COPYRIGHT",
             "CURRENCY",
@@ -1639,6 +1637,7 @@ def check_grammar(
             "IN_THE_INTERNET",
             "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
             "KEY_WORDS",
+            "LARGE_NUMBER_OF",
             "MULTIPLICATION_SIGN",
             "PLUS_MINUS",
             "PUNCTUATION_PARAGRAPH_END",
@@ -1646,6 +1645,7 @@ def check_grammar(
             "SENTENCE_WHITESPACE",
             "SO_AS_TO",
             "SOME_OF_THE",
+            "UNIT_SPACE",
             "UPPERCASE_SENTENCE_START",
             "WHITESPACE_RULE",
             "WORD_CONTAINS_UNDERSCORE",
@@ -1689,6 +1689,8 @@ def check_grammar(
 
         message = (
             issue.message.replace("“", '"')
+            .replace("’s", "'s")
+            .replace("n’t", "n't")
             .replace("”", '"')
             .replace("‘", '"')
             .replace("’", '"')
@@ -1751,16 +1753,27 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     iana_review_state = (
         meta["iana_review_state"] if "iana_review_state" in meta else None
     )
-    if iana_review_state and re.match(
-        r".*Not\s+OK", iana_review_state, re.IGNORECASE
-    ):
-        result["discuss"].append(
-            wrap_para(
-                "This document seems to have unresolved IANA issues, so I "
-                "am holding a DISCUSS for IANA until the issues are resolved.",
-                width=width,
+    if iana_review_state:
+        if re.match(r".*Not\s+OK", iana_review_state, re.IGNORECASE):
+            result["discuss"].append(
+                wrap_para(
+                    "This document seems to have unresolved IANA issues, so I "
+                    "am holding a DISCUSS for IANA until the issues are "
+                    "resolved.",
+                    width=width,
+                )
             )
-        )
+        elif re.match(r".*Review\s+Needed", iana_review_state, re.IGNORECASE):
+            result["discuss"].append(
+                wrap_para(
+                    "The IANA review of this document seems to not have "
+                    "concluded yet; I am holding a DISCUSS for IANA until "
+                    "it has.",
+                    width=width,
+                )
+            )
+    else:
+        log.warning("No IANA review state?")
 
     consensus = meta["consensus"] if "consensus" in meta else None
     if not consensus:
