@@ -1280,21 +1280,16 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
         return review
     rules = yaml.safe_load(isb_yaml)
 
-    result = []
+    result = {}
     for name, data in rules["rules"].items():
         for pattern in data["regex"]:
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
             hits = re.findall(pattern, text, re.IGNORECASE)
-            for hit in hits:
-                result.append(
-                    (
-                        name,
-                        hit[0],
-                        pattern,
-                        data["alternatives"]
-                        if "alternatives" in data
-                        else None,
-                    )
+            if hits:
+                result[name] = (
+                    list(filter(None, set(itertools.chain(*hits)))),
+                    pattern,
+                    data["alternatives"] if "alternatives" in data else None,
                 )
 
     if result:
@@ -1307,17 +1302,19 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
                 end="\n\n",
             )
         )
-        for match in [
-            next(g) for _, g in itertools.groupby(result, key=lambda x: x[1])
-        ]:
-            msg = f'Term "{match[1]}"; '
-            if match[3]:
+        for name, match in result.items():
+            if len(match[0]) == 1:
+                msg = f'Term "{match[0][0]}"; '
+            else:
+                terms = '", "'.join(match[0])
+                msg = f'Terms "{terms}"; '
+            if match[2]:
                 msg += "alternatives might be "
-                msg += ", ".join([f'"{a}"' for a in match[3]])
+                msg += ", ".join([f'"{a}"' for a in match[2]])
             else:
                 msg += "but I have no suggestion for an alternative"
             if verbose:
-                msg += f' (matched "{match[0]}" rule, pattern {match[2]})'
+                msg += f' (matched "{name}" rule, pattern {match[1]})'
             review["comment"].extend(bulletize(msg, width=width, end=".\n\n"))
 
     return review
@@ -1755,20 +1752,17 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     )
     if iana_review_state:
         if re.match(r".*Not\s+OK", iana_review_state, re.IGNORECASE):
-            result["discuss"].append(
+            result["comment"].append(
                 wrap_para(
-                    "This document seems to have unresolved IANA issues, so I "
-                    "am holding a DISCUSS for IANA until the issues are "
-                    "resolved.",
+                    "This document seems to have unresolved IANA issues.",
                     width=width,
                 )
             )
         elif re.match(r".*Review\s+Needed", iana_review_state, re.IGNORECASE):
-            result["discuss"].append(
+            result["comment"].append(
                 wrap_para(
                     "The IANA review of this document seems to not have "
-                    "concluded yet; I am holding a DISCUSS for IANA until "
-                    "it has.",
+                    "concluded yet.",
                     width=width,
                 )
             )
@@ -1839,26 +1833,28 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     @return     List of issues found.
     """
     result = {"discuss": [], "comment": [], "nit": []}
-    uses_keywords = re.search(KEYWORDS_PATTERN, text)
-    has_8174_boilerplate = re.search(BOILERPLATE_8174_PATTERN, text)
-    has_2119_boilerplate = re.search(BOILERPLATE_2119_PATTERN, text)
-    has_boilerplate_begin = re.search(BOILERPLATE_BEGIN_PATTERN, text)
+    uses_keywords = set(re.findall(KEYWORDS_PATTERN, text))
+    has_8174_boilerplate = set(re.findall(BOILERPLATE_8174_PATTERN, text))
+    has_2119_boilerplate = set(re.findall(BOILERPLATE_2119_PATTERN, text))
+    has_boilerplate_begin = set(re.findall(BOILERPLATE_BEGIN_PATTERN, text))
 
     msg = None
     if uses_keywords:
+        used_keywords = '"' + '", "'.join(uses_keywords) + '"'
+        kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
         if status.lower() in ["informational", "experimental"]:
             result["comment"].append(
                 wrap_para(
-                    f"Document has {status} status, but uses RFC2119 "
-                    f"keywords.",
+                    f"Document has {status} status, but uses the RFC2119 "
+                    f"{kw_text} {used_keywords}.",
                     width=width,
                 )
             )
 
         if not has_8174_boilerplate:
             msg = (
-                "This document uses RFC2119 keywords, but does not "
-                "contain the recommended RFC8174 boilerplate."
+                f"This document uses the RFC2119 {kw_text} {used_keywords}, "
+                f"but does not contain the recommended RFC8174 boilerplate."
             )
             if has_2119_boilerplate:
                 msg += " (It contains a variant of the RFC2119 boilerplate.)"
@@ -1884,7 +1880,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
         result["comment"].append(wrap_para(msg, width=width))
 
     if uses_keywords:
-        lc_not = re.findall(LC_NOT_KEYWORDS_PATTERN, text)
+        lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, text))
         if lc_not:
             lc_not_str = ", ".join(['"' + e + '"' for e in lc_not])
             result["comment"].append(
