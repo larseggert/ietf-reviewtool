@@ -1822,6 +1822,36 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     return result
 
 
+def check_tlp(text: str, status: str, width: int) -> dict:
+    """
+    Check the boilerplate against the Trust Legal Provisions (TLP).
+
+    @param      text    The document text
+    @param      status  The standards level of this document
+    @param      width   The width the comments should be wrapped to
+
+    @return     List of issues found.
+    """
+    result = {"discuss": [], "comment": [], "nit": []}
+    text = unfold(text)
+    if re.search(
+        r"""This\s+document\s+may\s+not\s+be\s+modified,?\s+and\s+derivative\s+
+            works\s+of\s+it\s+may\s+not\s+be\s+created""",
+        text,
+        re.VERBOSE,
+    ):
+        msg = (
+            "Document has an IETF Trust Provisions (TLP) Section 6.c(i) "
+            "Publication Limitation clause. This means it can in most cases"
+            "not be a WG document."
+        )
+        if status.lower() == "standards track":
+            msg += " And it cannot be published on the Standards Track."
+        result["discuss"].append(wrap_para(msg, width=width))
+
+    return result
+
+
 def check_boilerplate(text: str, status: str, width: int) -> dict:
     """
     Check the RFC2119/RFC8174 boilerplate in the document.
@@ -1967,6 +1997,12 @@ def review_extend(review: dict, extension: dict) -> dict:
     default=None,
     help="Check text for miscellaneous issues.",
 )
+@click.option(
+    "--check-tlp/--no-check-tlp",
+    "chk_tlp",
+    default=None,
+    help="Check boilerplate for TLP issues.",
+)
 @click.pass_obj
 def review_items(
     state: object,
@@ -1978,6 +2014,7 @@ def review_items(
     chk_inclusiv: bool,
     chk_boilerpl: bool,
     chk_misc: bool,
+    chk_tlp: bool,
     grammar_skip_rules: str,
 ) -> None:
     """
@@ -1997,6 +2034,7 @@ def review_items(
     chk_inclusiv = state.default if chk_inclusiv is None else chk_inclusiv
     chk_boilerpl = state.default if chk_boilerpl is None else chk_boilerpl
     chk_misc = state.default if chk_misc is None else chk_misc
+    chk_tlp = state.default if chk_tlp is None else chk_tlp
 
     current_directory = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
@@ -2065,6 +2103,9 @@ def review_items(
                 review_extend(
                     review, check_boilerplate(orig, status, state.width)
                 )
+
+            if chk_tlp:
+                review_extend(review, check_tlp(orig, status, state.width))
 
             meta = fetch_meta(state.datatracker, name)
             if chk_meta and meta:
