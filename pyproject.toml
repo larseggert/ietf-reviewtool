@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ietf-reviewtool"
-version = "0.1.3"
+version = "0.1.4"
 description = "Review tool for IETF documents"
 authors = ["Lars Eggert <lars@eggert.org>"]
 readme = "README.md"
