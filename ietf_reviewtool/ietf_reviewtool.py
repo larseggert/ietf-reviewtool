@@ -1192,23 +1192,27 @@ def duplicates(data: list) -> set:
     return dupes.discard(None)
 
 
-def is_downref(kind: str, level: str) -> bool:
+def is_downref(level: str, kind: str, ref_level: str) -> bool:
     """
     Check if a document reference is allowed (i.e., is not a DOWNREF) for a
     document at a given standards level.
 
-    @param      kind   The kind of reference (normative or informative.)
-    @param      level  The status level of the reference
+    @param      level      The (intended) standards level of the given document
+    @param      kind       The kind of reference (normative or informative.)
+    @param      ref_level  The status level of the reference
 
     @return     True if this is a DOWNREF, True otherwise.
     """
     if kind.lower() == "normative":
-        return level is None or level.lower() not in [
-            "best current practice",
-            "proposed standard",
-            "draft standard",
-            "internet standard",
-        ]
+        rank = {
+            "internet standard": 3,
+            "full standard": 3,
+            "best current practice": 3,
+            "draft standard": 2,
+            "proposed standard": 1,
+            "informational": 0,
+        }
+        return rank[level.lower()] > rank[ref_level.lower()]
     if kind.lower() == "informative":
         return False
     die(f"unknown kind {kind}")
@@ -1327,6 +1331,7 @@ def check_refs(
     width: int,
     name: str,
     status: str,
+    meta: dict,
 ) -> dict:
     """
     Check the references.
@@ -1337,6 +1342,7 @@ def check_refs(
     @param      width        The width to wrap to
     @param      name         The name of this document.
     @param      status       The standards level of the given document
+    @param      meta         The metadata
 
     @return     List of messages.
     """
@@ -1409,6 +1415,7 @@ def check_refs(
                     )
                 )
 
+    level = meta["std_level"] or meta["intended_std_level"]
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
             if doc:
@@ -1436,9 +1443,9 @@ def check_refs(
                 rev = draft_components.group(2)
             else:
                 name = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
-            meta = fetch_meta(datatracker, basename(name))
+            ref_meta = fetch_meta(datatracker, basename(name))
 
-            latest = get_latest(meta["rev_history"], "published")
+            latest = get_latest(ref_meta["rev_history"], "published")
             if latest["rev"] and rev and latest["rev"] > rev:
                 if latest["rev"].startswith("rfc"):
                     result["nit"].append(
@@ -1459,13 +1466,14 @@ def check_refs(
                     )
 
             if status.lower() not in ["informational", "experimental"]:
-                level = meta["std_level"] or meta["intended_std_level"]
-
-                if is_downref(kind, level) and name not in downrefs:
-                    if level is None:
+                ref_level = (
+                    ref_meta["std_level"] or ref_meta["intended_std_level"]
+                )
+                if is_downref(level, kind, ref_level) and name not in downrefs:
+                    if ref_level is None:
                         result["comment"].append(
                             wrap_para(
-                                f"Possible DOWNREF from this {status} doc "
+                                f"Possible DOWNREF from this {level} "
                                 f"to {tag}.",
                                 width=width,
                             )
@@ -1473,8 +1481,8 @@ def check_refs(
                     else:
                         result["discuss"].append(
                             wrap_para(
-                                f"DOWNREF from this {status} doc to {level} "
-                                f"{tag}.",
+                                f"DOWNREF from this {level} to "
+                                f"{ref_level} {tag}.",
                                 width=width,
                             )
                         )
@@ -1735,6 +1743,26 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     @return     List of issues found
     """
     result = {"discuss": [], "comment": [], "nit": []}
+
+    level = meta["std_level"] or meta["intended_std_level"]
+    if not level:
+        result["discuss"].append(
+            wrap_para(
+                "Datatracker does not record an intended RFC status "
+                "for this document.",
+                width=width,
+            )
+        )
+    else:
+        status = get_status(text)
+        if status != level:
+            result["discuss"].append(
+                wrap_para(
+                    f'Intended RFC status in datatracker is "{level}", but '
+                    f'document says "{status}".',
+                    width=width,
+                )
+            )
 
     num_authors = len(meta["authors"])
     if num_authors > 5:
@@ -2134,6 +2162,7 @@ def review_items(
                         state.width,
                         name,
                         status,
+                        meta,
                     ),
                 )
 
