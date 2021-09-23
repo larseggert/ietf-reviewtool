@@ -272,7 +272,7 @@ def unfold(text: str) -> str:
     folded = re.sub(r"\n{2,}\s*", rand, folded)
     folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
     folded = re.sub(
-        r"[^a-z]([a-z]{2,})://", r" \1://", folded, flags=re.IGNORECASE
+        r"[^a-z0-9]([a-z]{2,})://", r" \1://", folded, flags=re.IGNORECASE
     )
     folded = re.sub(r"([\-/])\n([^\(])", r"\1\2", folded)
     folded = re.sub(r"\n", r" ", folded)
@@ -596,7 +596,7 @@ def fetch(
 
 def get_items(
     items: list, datatracker: str, strip: bool = True, get_writeup=False
-) -> None:
+) -> list:
     """
     Download named items into files of the same name in the current directory.
     Does not overwrite existing files. Names need to include the revision, and
@@ -607,8 +607,9 @@ def get_items(
     @param      strip        Whether to run strip() on the downloaded item
     @param      get_writeup  Whether to download associated write-ups
 
-    @return     -
+    @return     List of file names written or existing
     """
+    result = []
     for item in items:
         do_strip = strip
         file_name = item
@@ -620,6 +621,7 @@ def get_items(
 
         if os.path.isfile(file_name):
             log.warning("%s exists, skipping", file_name)
+            result.append(file_name)
             continue
 
         log.debug("Getting %s", item)
@@ -683,6 +685,9 @@ def get_items(
                 log.debug("Stripping %s", item)
                 text = strip_pagination(text)
             write(text, file_name)
+            result.append(file_name)
+
+    return result
 
 
 @click.command(
@@ -1415,14 +1420,17 @@ def check_refs(
                     )
                 )
 
-    level = meta["std_level"] or meta["intended_std_level"]
+    level = meta and (meta["std_level"] or meta["intended_std_level"])
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
             if doc:
                 name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", doc)
             if not doc or not name:
                 log.info(
-                    "No metadata available for %s reference %s", kind, tag
+                    "No metadata available for %s reference %s (%s)",
+                    kind,
+                    tag,
+                    name,
                 )
                 if kind == "normative":
                     result["comment"].append(
@@ -1444,14 +1452,17 @@ def check_refs(
             else:
                 name = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
             ref_meta = fetch_meta(datatracker, basename(name))
+            display_name = re.sub(r"rfc", r"RFC", name)
 
-            latest = get_latest(ref_meta["rev_history"], "published")
+            latest = ref_meta and get_latest(
+                ref_meta["rev_history"], "published"
+            )
             if latest["rev"] and rev and latest["rev"] > rev:
                 if latest["rev"].startswith("rfc"):
                     result["nit"].append(
                         wrap_para(
-                            f"Document references {name}, but that has "
-                            f"been published as {latest['rev'].upper()}.",
+                            f"Document references {display_name}, but that "
+                            f"has been published as {latest['rev'].upper()}.",
                             width=width,
                         )
                     )
@@ -1473,16 +1484,16 @@ def check_refs(
                     if ref_level is None:
                         result["comment"].append(
                             wrap_para(
-                                f"Possible DOWNREF from this {level} "
-                                f"to {tag}.",
+                                f"Possible DOWNREF {tag} from this {level} "
+                                f"to {display_name}.",
                                 width=width,
                             )
                         )
                     else:
                         result["discuss"].append(
                             wrap_para(
-                                f"DOWNREF from this {level} to "
-                                f"{ref_level} {tag}.",
+                                f"DOWNREF {tag} from this {level} to "
+                                f"{ref_level} {display_name}.",
                                 width=width,
                             )
                         )
@@ -1493,14 +1504,16 @@ def check_refs(
             )
             if obsoleted_by:
                 if len(obsoleted_by) > 1:
-                    log.debug("%s obsoleted by more than one doc", name)
+                    log.warning(
+                        "%s obsoleted by more than one doc", display_name
+                    )
                 else:
                     obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
                     if "rfc" in obs_by:
                         result["nit"].append(
                             wrap_para(
-                                f"Obsolete reference to {untag(tag)}, "
-                                f"obsoleted by RFC{obs_by['rfc']} "
+                                f"Reference {tag} to {display_name}, "
+                                f"which was obsoleted by RFC{obs_by['rfc']} "
                                 f"(this may be on purpose).",
                                 width=width,
                             )
@@ -1755,7 +1768,9 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
         )
     else:
         status = get_status(text)
-        if status != level:
+        if status != level and (
+            level != "Proposed Standard" or status != "Standards Track"
+        ):
             result["discuss"].append(
                 wrap_para(
                     f'Intended RFC status in datatracker is "{level}", but '
@@ -2181,6 +2196,7 @@ def review_items(
                     )
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
+                    urls -= set(result)
 
                 reachability = {u: fetch_url(u, verbose, "HEAD") for u in urls}
                 result = []
@@ -2265,6 +2281,10 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
             os.mkdir(agenda_directory)
         os.chdir(agenda_directory)
 
+    current_items = set(os.listdir())
+    for item in ["ballot_writeup_text", "last_call_text", "protocol_writeup"]:
+        current_items.remove(item)
+
     if save_agenda:
         write(json.dumps(agenda, indent=4), "agenda.json")
 
@@ -2272,7 +2292,12 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
         "Downloading ballot items from %s IESG agenda",
         agenda["telechat-date"],
     )
-    get_items(items, state.datatracker, strip, fetch_writeups)
+
+    gotten = get_items(items, state.datatracker, strip, fetch_writeups)
+    if gotten:
+        extra = current_items - set(gotten)
+        log.warning(f"Directory contains extra files: {extra}.")
+
     if mkdir:
         os.chdir(current_directory)
 
