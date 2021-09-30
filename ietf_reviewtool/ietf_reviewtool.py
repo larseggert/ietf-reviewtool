@@ -34,10 +34,11 @@ import sys
 import tempfile
 import textwrap
 import urllib.parse
+import urllib.request
 import xml.etree.ElementTree
 
 import appdirs
-import cchardet as chardet
+import charset_normalizer
 import click
 import language_tool_python
 import requests
@@ -95,6 +96,108 @@ BOILERPLATE_2119_PATTERN = re.compile(
 # pattern matching the beginning of the RFC2119/RFC8174 boilerplate text
 BOILERPLATE_BEGIN_PATTERN = re.compile(
     r"""The\s+key\s*words\s+"MUST",\s+"MUST\s+NOT",\s+"REQUIRED",\s+""",
+)
+
+
+TLP_6A_PATTERN = re.compile(
+    r"""\s*This\s+Internet-Draft\s+is\s+submitted\s+in\s+full\s+conformance\s+
+        with\s+the\s+provisions\s+of\s+BCP\s*78\s+and\s+BCP\s*79\.\s+""",
+    re.VERBOSE,
+)
+
+ID_GUIDELINES_PATTERNS = [
+    (
+        True,
+        re.compile(
+            # this has an option for the pre-2010 text in it
+            r"""Internet-Drafts\s+are\s+working\s+documents\s+of\s+the\s+
+            Internet\s+Engineering\s+Task\s+Force\s+\(IETF\)
+            (,\s+its\s+areas,\s+and\s+its\s+working\s+groups)?\.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    (
+        True,
+        re.compile(
+            r"""Note\s+that\s+other\s+groups\s+may\s+also\s+distribute\s+
+            working\s+documents\s+as\s+Internet-Drafts\.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    (
+        True,
+        re.compile(
+            r"""The\s+list\s+of\s+current\s+Internet-Drafts\s+is\s+at\s+
+            https?://datatracker\.ietf\.org/drafts/current/?\.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    (
+        True,
+        re.compile(
+            r"""Internet-Drafts\s+are\s+draft\s+documents\s+valid\s+for\s+a\s+
+            maximum\s+of\s+six\s+months\s+and\s+may\s+be\s+updated,\s+
+            replaced,\s+or\s+obsoleted\s+by\s+other\s+documents\s+at\s+any\s+
+            time.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    (
+        True,
+        re.compile(
+            r"""It\s+is\s+inappropriate\s+to\s+use\s+Internet-Drafts\s+as\s+
+            reference\s+material\s+or\s+to\s+cite\s+them\s+other\s+than\s+as\s+
+            \"work\s+in\s+progress(\.\"|\"\.)\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    # this are not part of the boilerplate, but xml2rfc adds it?
+    (
+        False,
+        re.compile(
+            r"""This\s+Internet-Draft\s+will\s+expire\s+on\s+
+            (\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{1,2},\s+\d{4})\.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    # this is pre-2010 text:
+    (
+        False,
+        re.compile(
+            r"""The\s+list\s+of\s+current\s+Internet-Drafts\s+can\s+be\s+
+            accessed\s+at\s+https?://www\.ietf\.org/1id-abstracts\.
+            html\.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+    (
+        False,
+        re.compile(
+            r"""The\s+list\s+of\s+Internet-Draft\s+Shadow\s+Directories\s+can\s+
+            be\s+accessed\s+at\s+https?://www\.ietf\.org/shadow\.html\.\s+""",
+            re.VERBOSE,
+        ),
+    ),
+]
+
+
+COPYRIGHT = re.compile(
+    r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+and\s+the\s+persons\s+
+        identified\s+as\s+the\s+document\s+authors\.\s+
+        All\s+rights\s+reserved\.\s+
+        This\s+document\s+is\s+subject\s+to\s+BCP\s*78\s+and\s+the\s+IETF\s+
+        Trust's\s+Legal\s+Provisions\s+Relating\s+to\s+IETF\s+Documents\s+
+        \(https?://trustee\.ietf\.org/license-info\)\s+in\s+effect\s+on\s+
+        the\s+date\s+of\s+publication\s+of\s+this\s+document\.\s+
+        Please\s+review\s+these\s+documents\s+carefully,\s+as\s+they\s+
+        describe\s+your\s+rights\s+and\s+restrictions\s+with\s+respect\s+
+        to\s+this\s+document\.\s+Code\s+Components\s+extracted\s+from\s+
+        this\s+document\s+must\s+include\s+(Simplified|Revised)\s+BSD\s+
+        License\s+text\s+as\s+described\s+in\s+Section\s+4\.e\s+of\s+
+        the\s+Trust\s+Legal\s+Provisions\s+and\s+are\s+provided\s+
+        without\s+warranty\s+as\s+described\s+in\s+the\s+
+        (Simplified|Revised)\s+BSD\s+License\.\s*""",
+    re.VERBOSE,
 )
 
 
@@ -168,6 +271,30 @@ def die(msg: list, err: int = 1) -> None:
     sys.exit(err)
 
 
+def word_join(words: list, oxford_comma=True, prefix="", suffix=""):
+    """
+    Join list items using commas and "and", optionally each prefixed by
+    something.
+
+    @param      words         The words to join
+    @param      oxford_comma  Whether to use the oxford comma
+    @param      prefix        A prefix to use for each word
+    @param      suffix        A suffix to use for each word
+
+    @return     String of joined words
+    """
+    if len(words) == 0:
+        return ""
+    if len(words) == 1:
+        return f"{prefix}{words[0]}{suffix}"
+    if len(words) == 2:
+        return f"{prefix}{words[0]}{suffix} and {prefix}{words[1]}{suffix}"
+    return (
+        f'{prefix}{f"{suffix}, {prefix}".join(words[:-1])}'
+        f'{"," if oxford_comma else ""} and {prefix}{words[-1]}{suffix}'
+    )
+
+
 def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
     """
     Fetches the resource at the given URL or checks its reachability (when
@@ -181,6 +308,20 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
     @return     The decoded content of the resource (or the empty string for a
                 successful HEAD request). None if an error occurred.
     """
+    if url.startswith("%s ftp:"):
+        try:
+            log.debug(
+                "%s %scache %s",
+                method.lower(),
+                "no" if not use_cache else "",
+                url,
+            )
+            with urllib.request.urlopen(url) as response:
+                return response.read()
+        except urllib.error.URLError as err:
+            log.debug("%s -> %s", url, err)
+            return None
+
     while True:
         try:
             log.debug(
@@ -235,11 +376,7 @@ def read(file_name: str) -> str:
     """
     try:
         with open(file_name, "rb") as file:
-            raw = file.read()
-            encoding = chardet.detect(raw)["encoding"]
-            if encoding is None:
-                encoding = "utf-8"
-            return raw.decode(encoding)
+            return str(charset_normalizer.from_bytes(file.read()).best())
     except FileNotFoundError as err:
         log.error("%s -> %s", file_name, err)
         return None
@@ -271,9 +408,9 @@ def unfold(text: str) -> str:
     folded = re.sub(r"[\r\f]", r"", text)
     folded = re.sub(r"\n{2,}\s*", rand, folded)
     folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
-    folded = re.sub(
-        r"[^a-z0-9]([a-z]{2,})://", r" \1://", folded, flags=re.IGNORECASE
-    )
+    # folded = re.sub(
+    #     r"([^a-z0-9])([a-z]{2,})://", r"\1\2://", folded, flags=re.IGNORECASE
+    # )
     folded = re.sub(r"([\-/])\n([^\(])", r"\1\2", folded)
     folded = re.sub(r"\n", r" ", folded)
     folded = re.sub(rand, r"\n\n", folded)
@@ -449,8 +586,9 @@ def strip_pagination(text: str) -> str:
             )
             or re.search(
                 r"""^\s*(RFC|Internet-Draft).*
-                        (Jan|Feb|Mar(ch)?|Apr(il)?|
-                        May|June?|July?|Aug|Sep|Oct|Nov|Dec)\s
+                        (Jan(uary)?|Feb(ruary)?|Mar(ch)?|Apr(il)?|
+                        May|June?|July?|Aug(ust)?|Sep(tember)?|Oct(ober)?|
+                        Nov(ember)?|Dec(ember)?)\s
                         (19[89]\d|20\d{2})\s*$""",
                 mod,
                 re.VERBOSE,
@@ -1215,6 +1353,7 @@ def is_downref(level: str, kind: str, ref_level: str) -> bool:
             "best current practice": 3,
             "draft standard": 2,
             "proposed standard": 1,
+            "experimental": 0,
             "informational": 0,
         }
         return rank[level.lower()] > rank[ref_level.lower()]
@@ -1312,11 +1451,8 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
             )
         )
         for name, match in result.items():
-            if len(match[0]) == 1:
-                msg = f'Term "{match[0][0]}"; '
-            else:
-                terms = '", "'.join(match[0])
-                msg = f'Terms "{terms}"; '
+            terms = word_join(match[0], prefix='"', suffix='"')
+            msg = f'Term{"s" if len(match[0]) > 1 else ""} {terms}; '
             if match[2]:
                 msg += "alternatives might be "
                 msg += ", ".join([f'"{a}"' for a in match[2]])
@@ -1366,7 +1502,7 @@ def check_refs(
         if dupes:
             result["nit"].append(
                 wrap_para(
-                    f"Duplicate {kind} references: {', '.join(dupes)}.",
+                    f"Duplicate {kind} references: {word_join(dupes)}.",
                     width=width,
                 )
             )
@@ -1376,7 +1512,7 @@ def check_refs(
             tags = [t[0] for t in refs[kind] if t[1] in dupes]
             result["nit"].append(
                 wrap_para(
-                    f"Duplicate {kind} references to: {', '.join(dupes)}.",
+                    f"Duplicate {kind} references to: {word_join(dupes)}.",
                     width=width,
                 )
             )
@@ -1390,19 +1526,19 @@ def check_refs(
         result["nit"].append(
             wrap_para(
                 "Reference entries duplicated in both normative and "
-                f"informative sections: {', '.join(norm & info)}.",
+                f"informative sections: {word_join(list(norm & info))}.",
                 width=width,
             )
         )
 
     if text - both:
-        ref_list = wrap_and_indent(", ".join(text - both), width=width)
+        ref_list = wrap_and_indent(word_join(list(text - both)), width=width)
         result["comment"].append(
             f"No reference entries found for: {ref_list}\n\n"
         )
 
     if both - text:
-        ref_list = wrap_and_indent(", ".join(both - text), width=width)
+        ref_list = wrap_and_indent(word_join(list(both - text)), width=width)
         result["nit"].append(f"Uncited references: {ref_list}\n\n")
 
     for rel, docs in rels.items():
@@ -1503,21 +1639,21 @@ def check_refs(
                 "relateddocument/?relationship__slug=obs&target__name=" + name,
             )
             if obsoleted_by:
-                if len(obsoleted_by) > 1:
-                    log.warning(
-                        "%s obsoleted by more than one doc", display_name
-                    )
-                else:
-                    obs_by = fetch_dt(datatracker, obsoleted_by[0]["source"])
+                ob_bys = []
+                for o in obsoleted_by:
+                    obs_by = fetch_dt(datatracker, o["source"])
                     if "rfc" in obs_by:
-                        result["nit"].append(
-                            wrap_para(
-                                f"Reference {tag} to {display_name}, "
-                                f"which was obsoleted by RFC{obs_by['rfc']} "
-                                f"(this may be on purpose).",
-                                width=width,
-                            )
-                        )
+                        ob_bys.append(obs_by["rfc"])
+
+                ob_rfcs = word_join(ob_bys, prefix="RFC")
+                result["nit"].append(
+                    wrap_para(
+                        f"Reference {tag} to {display_name}, "
+                        f"which was obsoleted by {ob_rfcs} "
+                        f"(this may be on purpose).",
+                        width=width,
+                    )
+                )
 
     return result
 
@@ -1835,12 +1971,7 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
         if rel == "updates":
             abstract = extract_abstract(text)
             if not re.search(r"updates", abstract):
-                if len(docs) == 1:
-                    updates = f"RFC{docs[0]}"
-                else:
-                    updates = "{} and RFC{}".format(
-                        ", ".join([f"RFC{x}" for x in docs[:-1]]), docs[-1]
-                    )
+                updates = word_join(docs, prefix="RFC")
                 result["discuss"].append(
                     wrap_para(
                         f"This document updates {updates}, but does not seem "
@@ -1913,7 +2044,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
 
     msg = None
     if uses_keywords:
-        used_keywords = '"' + '", "'.join(uses_keywords) + '"'
+        used_keywords = word_join(list(uses_keywords), prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
         if status.lower() in ["informational", "experimental"]:
             result["comment"].append(
@@ -1955,7 +2086,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     if uses_keywords:
         lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, text))
         if lc_not:
-            lc_not_str = ", ".join(['"' + e + '"' for e in lc_not])
+            lc_not_str = word_join(lc_not, prefix='"', suffix='"')
             result["comment"].append(
                 wrap_para(
                     f'Using lowercase "not" together with an uppercase '
@@ -1964,6 +2095,68 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
                     width=width,
                 )
             )
+
+    sotm = ""
+    for line in text.splitlines(keepends=True):
+        if re.match(r"^\s+$", line):
+            continue
+        if len(sotm) == 0:
+            if re.match(
+                r"^\s*Status\s+of\s+This\s+Memo\s*$", line, re.IGNORECASE
+            ):
+                sotm += " "
+            continue
+        if re.match(r"^\s*Copyright Notice\s*$", line):
+            continue
+        if re.match(r"^\s*Table\s+of\s+Contents\s*$", line, re.IGNORECASE):
+            break
+        sotm += line
+    sotm = unfold(sotm)
+
+    if re.search(TLP_6A_PATTERN, sotm):
+        sotm = re.sub(TLP_6A_PATTERN, r"", sotm)
+    else:
+        result["comment"].append(
+            wrap_para(
+                'TLP Section 6(a) "Submission Compliance for '
+                'Internet-Drafts" boilerplate text seems to have issues.',
+                width=width,
+            )
+        )
+
+    idg_issues = False
+
+    for required, pat in ID_GUIDELINES_PATTERNS:
+        if re.search(pat, sotm):
+            sotm = re.sub(pat, r"", sotm)
+        elif required:
+            idg_issues = True
+    if idg_issues:
+        result["comment"].append(
+            wrap_para(
+                "I-D Guidelines boilerplate text seems to have issues.",
+                width=width,
+            )
+        )
+
+    if re.search(COPYRIGHT, sotm):
+        sotm = re.sub(COPYRIGHT, r"", sotm)
+    else:
+        result["comment"].append(
+            wrap_para(
+                'TLP Section 6(b) "Copyright and License Notice" boilerplate'
+                "text seems to have issues.",
+                width=width,
+            )
+        )
+
+    if sotm:
+        result["comment"].append(
+            wrap_para(
+                f'Found stray text in boilerplate: "{sotm}"',
+                width=width,
+            )
+        )
 
     return result
 
@@ -2137,7 +2330,7 @@ def review_items(
                                 f"The text version of this document contains "
                                 f"these HTML entities, which might indicate "
                                 f"issues with its XML source: "
-                                f"{', '.join(set(entities))}",
+                                f"{word_join(list(set(entities)))}",
                                 width=state.width,
                             )
                         )
@@ -2282,8 +2475,15 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
         os.chdir(agenda_directory)
 
     current_items = set(os.listdir())
-    for item in ["ballot_writeup_text", "last_call_text", "protocol_writeup"]:
-        current_items.remove(item)
+    for item in [
+        "ballot_writeup_text",
+        "last_call_text",
+        "protocol_writeup",
+        "ballot_rfceditornote_text",
+        "agenda.json",
+    ]:
+        if item in current_items:
+            current_items.remove(item)
 
     if save_agenda:
         write(json.dumps(agenda, indent=4), "agenda.json")
@@ -2296,7 +2496,8 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
     gotten = get_items(items, state.datatracker, strip, fetch_writeups)
     if gotten:
         extra = current_items - set(gotten)
-        log.warning(f"Directory contains extra files: {extra}.")
+        if extra:
+            log.warning("Directory contains extra files: %s.", extra)
 
     if mkdir:
         os.chdir(current_directory)

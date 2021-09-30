@@ -7,14 +7,6 @@ optional = false
 python-versions = "*"
 
 [[package]]
-name = "cchardet"
-version = "2.1.7"
-description = "cChardet is high speed universal character encoding detector."
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
 name = "certifi"
 version = "2021.5.30"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -24,7 +16,7 @@ python-versions = "*"
 
 [[package]]
 name = "charset-normalizer"
-version = "2.0.4"
+version = "2.0.6"
 description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
 category = "main"
 optional = false
@@ -59,7 +51,7 @@ python-versions = ">=3.5"
 
 [[package]]
 name = "language-tool-python"
-version = "2.5.5"
+version = "2.6.1"
 description = "Checks grammar using LanguageTool."
 category = "main"
 optional = false
@@ -108,7 +100,7 @@ requests = ">=1.1.0"
 
 [[package]]
 name = "tqdm"
-version = "4.62.2"
+version = "4.62.3"
 description = "Fast, Extensible Progress Meter"
 category = "main"
 optional = false
@@ -124,7 +116,7 @@ telegram = ["requests"]
 
 [[package]]
 name = "urllib3"
-version = "1.26.6"
+version = "1.26.7"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 category = "main"
 optional = false
@@ -138,51 +130,20 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3, >=3.6"
-content-hash = "010ec368404d803c1e088b4d55e6f7ef51ab37e0f1328d4667319b12f68be7a9"
+content-hash = "bb3709fdb5f20d5f8e8aa9aea67ffcfcc6ecc7f1116f40eb041a4245f125bafc"
 
 [metadata.files]
 appdirs = [
     {file = "appdirs-1.4.4-py2.py3-none-any.whl", hash = "sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128"},
     {file = "appdirs-1.4.4.tar.gz", hash = "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41"},
 ]
-cchardet = [
-    {file = "cchardet-2.1.7-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:c6f70139aaf47ffb94d89db603af849b82efdf756f187cdd3e566e30976c519f"},
-    {file = "cchardet-2.1.7-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:5a25f9577e9bebe1a085eec2d6fdd72b7a9dd680811bba652ea6090fb2ff472f"},
-    {file = "cchardet-2.1.7-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:6b6397d8a32b976a333bdae060febd39ad5479817fabf489e5596a588ad05133"},
-    {file = "cchardet-2.1.7-cp36-cp36m-manylinux2010_i686.whl", hash = "sha256:228d2533987c450f39acf7548f474dd6814c446e9d6bd228e8f1d9a2d210f10b"},
-    {file = "cchardet-2.1.7-cp36-cp36m-manylinux2010_x86_64.whl", hash = "sha256:54341e7e1ba9dc0add4c9d23b48d3a94e2733065c13920e85895f944596f6150"},
-    {file = "cchardet-2.1.7-cp36-cp36m-win32.whl", hash = "sha256:eee4f5403dc3a37a1ca9ab87db32b48dc7e190ef84601068f45397144427cc5e"},
-    {file = "cchardet-2.1.7-cp36-cp36m-win_amd64.whl", hash = "sha256:f86e0566cb61dc4397297696a4a1b30f6391b50bc52b4f073507a48466b6255a"},
-    {file = "cchardet-2.1.7-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:302aa443ae2526755d412c9631136bdcd1374acd08e34f527447f06f3c2ddb98"},
-    {file = "cchardet-2.1.7-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:70eeae8aaf61192e9b247cf28969faef00578becd2602526ecd8ae7600d25e0e"},
-    {file = "cchardet-2.1.7-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:a39526c1c526843965cec589a6f6b7c2ab07e3e56dc09a7f77a2be6a6afa4636"},
-    {file = "cchardet-2.1.7-cp37-cp37m-manylinux2010_i686.whl", hash = "sha256:b154effa12886e9c18555dfc41a110f601f08d69a71809c8d908be4b1ab7314f"},
-    {file = "cchardet-2.1.7-cp37-cp37m-manylinux2010_x86_64.whl", hash = "sha256:ec3eb5a9c475208cf52423524dcaf713c394393e18902e861f983c38eeb77f18"},
-    {file = "cchardet-2.1.7-cp37-cp37m-win32.whl", hash = "sha256:50ad671e8d6c886496db62c3bd68b8d55060688c655873aa4ce25ca6105409a1"},
-    {file = "cchardet-2.1.7-cp37-cp37m-win_amd64.whl", hash = "sha256:54d0b26fd0cd4099f08fb9c167600f3e83619abefeaa68ad823cc8ac1f7bcc0c"},
-    {file = "cchardet-2.1.7-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:b59ddc615883835e03c26f81d5fc3671fab2d32035c87f50862de0da7d7db535"},
-    {file = "cchardet-2.1.7-cp38-cp38-manylinux1_i686.whl", hash = "sha256:27a9ba87c9f99e0618e1d3081189b1217a7d110e5c5597b0b7b7c3fedd1c340a"},
-    {file = "cchardet-2.1.7-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:90086e5645f8a1801350f4cc6cb5d5bf12d3fa943811bb08667744ec1ecc9ccd"},
-    {file = "cchardet-2.1.7-cp38-cp38-manylinux2010_i686.whl", hash = "sha256:45456c59ec349b29628a3c6bfb86d818ec3a6fbb7eb72de4ff3bd4713681c0e3"},
-    {file = "cchardet-2.1.7-cp38-cp38-manylinux2010_x86_64.whl", hash = "sha256:f16517f3697569822c6d09671217fdeab61dfebc7acb5068634d6b0728b86c0b"},
-    {file = "cchardet-2.1.7-cp38-cp38-win32.whl", hash = "sha256:0b859069bbb9d27c78a2c9eb997e6f4b738db2d7039a03f8792b4058d61d1109"},
-    {file = "cchardet-2.1.7-cp38-cp38-win_amd64.whl", hash = "sha256:273699c4e5cd75377776501b72a7b291a988c6eec259c29505094553ee505597"},
-    {file = "cchardet-2.1.7-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:48ba829badef61441e08805cfa474ccd2774be2ff44b34898f5854168c596d4d"},
-    {file = "cchardet-2.1.7-cp39-cp39-manylinux1_i686.whl", hash = "sha256:bd7f262f41fd9caf5a5f09207a55861a67af6ad5c66612043ed0f81c58cdf376"},
-    {file = "cchardet-2.1.7-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:fdac1e4366d0579fff056d1280b8dc6348be964fda8ebb627c0269e097ab37fa"},
-    {file = "cchardet-2.1.7-cp39-cp39-manylinux2010_i686.whl", hash = "sha256:80e6faae75ecb9be04a7b258dc4750d459529debb6b8dee024745b7b5a949a34"},
-    {file = "cchardet-2.1.7-cp39-cp39-manylinux2010_x86_64.whl", hash = "sha256:c96aee9ebd1147400e608a3eff97c44f49811f8904e5a43069d55603ac4d8c97"},
-    {file = "cchardet-2.1.7-cp39-cp39-win32.whl", hash = "sha256:2309ff8fc652b0fc3c0cff5dbb172530c7abb92fe9ba2417c9c0bcf688463c1c"},
-    {file = "cchardet-2.1.7-cp39-cp39-win_amd64.whl", hash = "sha256:24974b3e40fee9e7557bb352be625c39ec6f50bc2053f44a3d1191db70b51675"},
-    {file = "cchardet-2.1.7.tar.gz", hash = "sha256:c428b6336545053c2589f6caf24ea32276c6664cb86db817e03a94c60afa0eaf"},
-]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
     {file = "certifi-2021.5.30.tar.gz", hash = "sha256:2bbf76fd432960138b3ef6dda3dde0544f27cbf8546c458e60baf371917ba9ee"},
 ]
 charset-normalizer = [
-    {file = "charset-normalizer-2.0.4.tar.gz", hash = "sha256:f23667ebe1084be45f6ae0538e4a5a865206544097e4e8bbcacf42cd02a348f3"},
-    {file = "charset_normalizer-2.0.4-py3-none-any.whl", hash = "sha256:0c8911edd15d19223366a194a513099a302055a962bca2cec0f54b8b63175d8b"},
+    {file = "charset-normalizer-2.0.6.tar.gz", hash = "sha256:5ec46d183433dcbd0ab716f2d7f29d8dee50505b3fdb40c6b985c7c4f5a3591f"},
+    {file = "charset_normalizer-2.0.6-py3-none-any.whl", hash = "sha256:5d209c0a931f215cee683b6445e2d77677e7e75e159f78def0db09d68fafcaa6"},
 ]
 click = [
     {file = "click-7.1.2-py2.py3-none-any.whl", hash = "sha256:dacca89f4bfadd5de3d7489b7c8a566eee0d3676333fbb50030263894c38c0dc"},
@@ -197,8 +158,8 @@ idna = [
     {file = "idna-3.2.tar.gz", hash = "sha256:467fbad99067910785144ce333826c71fb0e63a425657295239737f7ecd125f3"},
 ]
 language-tool-python = [
-    {file = "language_tool_python-2.5.5-py3-none-any.whl", hash = "sha256:d181c9529d51666ba90ce1aa7e43648fa3aca9d0b207532b66dbce6f25b417d4"},
-    {file = "language_tool_python-2.5.5.tar.gz", hash = "sha256:c417d7d00036241b528ac32b1c284a3ab9280eae76e368a2bfccc8ee794b6c1a"},
+    {file = "language_tool_python-2.6.1-py3-none-any.whl", hash = "sha256:31592e0b288f148a51f8264821d3b74dec74c8b2d6329bbc292a88ee5b4b341e"},
+    {file = "language_tool_python-2.6.1.tar.gz", hash = "sha256:2ca9839ed740c18e815d5ee707df7dad9bbcb4133c85d24efe1d1b0c2c78e3e5"},
 ]
 pyyaml = [
     {file = "PyYAML-5.4.1-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:3b2b1824fe7112845700f815ff6a489360226a5609b96ec2190a45e62a9fc922"},
@@ -240,10 +201,10 @@ requests-cache = [
     {file = "requests_cache-0.5.2-py2.py3-none-any.whl", hash = "sha256:81e13559baee64677a7d73b85498a5a8f0639e204517b5d05ff378e44a57831a"},
 ]
 tqdm = [
-    {file = "tqdm-4.62.2-py2.py3-none-any.whl", hash = "sha256:80aead664e6c1672c4ae20dc50e1cdc5e20eeff9b14aa23ecd426375b28be588"},
-    {file = "tqdm-4.62.2.tar.gz", hash = "sha256:a4d6d112e507ef98513ac119ead1159d286deab17dffedd96921412c2d236ff5"},
+    {file = "tqdm-4.62.3-py2.py3-none-any.whl", hash = "sha256:8dd278a422499cd6b727e6ae4061c40b48fce8b76d1ccbf5d34fca9b7f925b0c"},
+    {file = "tqdm-4.62.3.tar.gz", hash = "sha256:d359de7217506c9851b7869f3708d8ee53ed70a1b8edbba4dbcb47442592920d"},
 ]
 urllib3 = [
-    {file = "urllib3-1.26.6-py2.py3-none-any.whl", hash = "sha256:39fb8672126159acb139a7718dd10806104dec1e2f0f6c88aab05d17df10c8d4"},
-    {file = "urllib3-1.26.6.tar.gz", hash = "sha256:f57b4c16c62fa2760b7e3d97c35b255512fb6b59a259730f36ba32ce9f8e342f"},
+    {file = "urllib3-1.26.7-py2.py3-none-any.whl", hash = "sha256:c4fdf4019605b6e5423637e01bc9fe4daef873709a7973e195ceba0a62bbc844"},
+    {file = "urllib3-1.26.7.tar.gz", hash = "sha256:4987c65554f7a2dbf30c18fd48778ef124af6fab771a377103da0585e2336ece"},
 ]

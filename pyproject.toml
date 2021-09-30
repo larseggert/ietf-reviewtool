@@ -15,7 +15,7 @@ appdirs = "^1.4.4"
 click = "^7.1.2"
 language-tool-python = "^2.5.3"
 PyYAML = "^5.4.1"
-cchardet = "^2.1.7"
+charset-normalizer = "^2.0.6"
 
 [tool.poetry.dev-dependencies]
 
