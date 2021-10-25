@@ -180,10 +180,8 @@ ID_GUIDELINES_PATTERNS = [
     ),
 ]
 
-
-COPYRIGHT = re.compile(
-    r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+and\s+the\s+persons\s+
-        identified\s+as\s+the\s+document\s+authors\.\s+
+COPYRIGHT_ALT_STREAMS = r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+
+        and\s+the\s+persons\s+identified\s+as\s+the\s+document\s+authors\.\s+
         All\s+rights\s+reserved\.\s+
         This\s+document\s+is\s+subject\s+to\s+BCP\s*78\s+and\s+the\s+IETF\s+
         Trust's\s+Legal\s+Provisions\s+Relating\s+to\s+IETF\s+Documents\s+
@@ -191,12 +189,54 @@ COPYRIGHT = re.compile(
         the\s+date\s+of\s+publication\s+of\s+this\s+document\.\s+
         Please\s+review\s+these\s+documents\s+carefully,\s+as\s+they\s+
         describe\s+your\s+rights\s+and\s+restrictions\s+with\s+respect\s+
-        to\s+this\s+document\.\s+Code\s+Components\s+extracted\s+from\s+
+        to\s+this\s+document\.\s*"""
+
+COPYRIGHT_IETF = re.compile(
+    COPYRIGHT_ALT_STREAMS
+    + r"""Code\s+Components\s+extracted\s+from\s+
         this\s+document\s+must\s+include\s+(Simplified|Revised)\s+BSD\s+
         License\s+text\s+as\s+described\s+in\s+Section\s+4\.e\s+of\s+
         the\s+Trust\s+Legal\s+Provisions\s+and\s+are\s+provided\s+
         without\s+warranty\s+as\s+described\s+in\s+the\s+
         (Simplified|Revised)\s+BSD\s+License\.\s*""",
+    re.VERBOSE,
+)
+
+COPYRIGHT_ALT_STREAMS = re.compile(
+    COPYRIGHT_ALT_STREAMS,
+    re.VERBOSE,
+)
+
+NO_MOD_RFC = re.compile(
+    r"""This\s+document\s+may\s+not\s+be\s+modified,\s+and\s+derivative\s+
+    works\s+of\s+it\s+may\s+not\s+be\s+created,\s+except\s+to\s+format\s+it\s+
+    for\s+publication\s+as\s+an\s+RFC\s+or\s+to\s+translate\s+it\s+into\s+
+    languages\s+other\s+than\s+English\.\s*""",
+    re.VERBOSE,
+)
+
+NO_MOD_NO_RFC = re.compile(
+    r"""This\s+document\s+may\s+not\s+be\s+modified,\s+and\s+derivative\s+
+    works\s+of\s+it\s+may\s+not\s+be\s+created,\s+and\s+it\s+may\s+not\s+be\s+
+    published\s+except\s+as\s+an\s+Internet-Draft\.\s*""",
+    re.VERBOSE,
+)
+
+PRE_5378 = re.compile(
+    r"""This\s+document\s+may\s+contain\s+material\s+from\s+IETF\s+Documents\s+
+    or\s+IETF\s+Contributions\s+published\s+or\s+made\s+publicly\s+available\s+
+    before\s+November\s+10,\s+2008\.\s+
+    The\s+person\(s\)\s+controlling\s+the\s+copyright\s+in\s+some\s+of\s+this\s+
+    material\s+may\s+not\s+have\s+granted\s+the\s+IETF\s+Trust\s+the\s+right\s+
+    to\s+allow\s+modifications\s+of\s+such\s+material\s+outside\s+the\s+IETF\s+
+    Standards\s+Process\.\s+
+    Without\s+obtaining\s+an\s+adequate\s+license\s+from\s+the\s+person\(s\)\s+
+    controlling\s+the\s+copyright\s+in\s+such\s+materials,\s+this\s+document\s+
+    may\s+not\s+be\s+modified\s+outside\s+the\s+IETF\s+Standards\s+Process,\s+
+    and\s+derivative\s+works\s+of\s+it\s+may\s+not\s+be\s+created\s+outside\s+
+    the\s+IETF\s+Standards\s+Process,\s+except\s+to\s+format\s+it\s+for\s+
+    publication\s+as\s+an\s+RFC\s+or\s+to\s+translate\s+it\s+into\s+languages\s+
+    other\s+than\s+English\.\s*""",
     re.VERBOSE,
 )
 
@@ -271,7 +311,18 @@ def die(msg: list, err: int = 1) -> None:
     sys.exit(err)
 
 
-def word_join(words: list, oxford_comma=True, prefix="", suffix=""):
+def normalize_ws(string: str) -> str:
+    """
+    Replace multiple white space characters by a single space.
+
+    @param      string  The string to replace in
+
+    @return     The replacement string
+    """
+    return re.sub(r"\s+", r" ", string)
+
+
+def word_join(words: list, oxford_comma=True, prefix="", suffix="") -> str:
     """
     Join list items using commas and "and", optionally each prefixed by
     something.
@@ -308,7 +359,7 @@ def fetch_url(url: str, use_cache: bool = True, method: str = "GET") -> str:
     @return     The decoded content of the resource (or the empty string for a
                 successful HEAD request). None if an error occurred.
     """
-    if url.startswith("%s ftp:"):
+    if url.startswith("ftp:") or url.startswith("file:"):
         try:
             log.debug(
                 "%s %scache %s",
@@ -1353,8 +1404,10 @@ def is_downref(level: str, kind: str, ref_level: str) -> bool:
             "best current practice": 3,
             "draft standard": 2,
             "proposed standard": 1,
+            "standards track": 1,
             "experimental": 0,
             "informational": 0,
+            "unknown": 0,
         }
         return rank[level.lower()] > rank[ref_level.lower()]
     if kind.lower() == "informative":
@@ -1473,6 +1526,7 @@ def check_refs(
     name: str,
     status: str,
     meta: dict,
+    text: str,
 ) -> dict:
     """
     Check the references.
@@ -1484,6 +1538,7 @@ def check_refs(
     @param      name         The name of this document.
     @param      status       The standards level of the given document
     @param      meta         The metadata
+    @param      text         The document text
 
     @return     List of messages.
     """
@@ -1520,7 +1575,7 @@ def check_refs(
     norm = set(e[0] for e in refs["normative"])
     info = set(e[0] for e in refs["informative"])
     both = norm | info
-    text = {"[" + r + "]" for r in {untag(r) for r in refs["text"]}}
+    in_text = {"[" + r + "]" for r in {untag(r) for r in refs["text"]}}
 
     if norm & info:
         result["nit"].append(
@@ -1531,14 +1586,18 @@ def check_refs(
             )
         )
 
-    if text - both:
-        ref_list = wrap_and_indent(word_join(list(text - both)), width=width)
+    if in_text - both:
+        ref_list = wrap_and_indent(
+            word_join(list(in_text - both)), width=width
+        )
         result["comment"].append(
             f"No reference entries found for: {ref_list}\n\n"
         )
 
-    if both - text:
-        ref_list = wrap_and_indent(word_join(list(both - text)), width=width)
+    if both - in_text:
+        ref_list = wrap_and_indent(
+            word_join(list(both - in_text)), width=width
+        )
         result["nit"].append(f"Uncited references: {ref_list}\n\n")
 
     for rel, docs in rels.items():
@@ -1557,6 +1616,11 @@ def check_refs(
                 )
 
     level = meta and (meta["std_level"] or meta["intended_std_level"])
+    if not level:
+        # if we have no level from the metadata, see if the document has one
+        level = re.search(r"^Intended status: (.*)\s{2,}", text, re.MULTILINE)
+        level = level[1].rstrip() if level else "unknown"
+
     for kind in ["normative", "informative"]:
         for tag, doc in refs[kind]:
             if doc:
@@ -1614,7 +1678,9 @@ def check_refs(
 
             if status.lower() not in ["informational", "experimental"]:
                 ref_level = (
-                    ref_meta["std_level"] or ref_meta["intended_std_level"]
+                    ref_meta["std_level"]
+                    or ref_meta["intended_std_level"]
+                    or "unknown"
                 )
                 if is_downref(level, kind, ref_level) and name not in downrefs:
                     if ref_level is None:
@@ -1787,6 +1853,7 @@ def check_grammar(
             "EN_QUOTES",
             "EN_UNPAIRED_BRACKETS",
             "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
+            "HYPOTHESIS_TYPOGRAPHY",
             "I_LOWERCASE",
             "IN_THE_INTERNET",
             "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
@@ -2044,7 +2111,10 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
 
     msg = None
     if uses_keywords:
-        used_keywords = word_join(list(uses_keywords), prefix='"', suffix='"')
+        used_keywords = []
+        for word in set(uses_keywords):
+            used_keywords.append(normalize_ws(word))
+        used_keywords = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
         if status.lower() in ["informational", "experimental"]:
             result["comment"].append(
@@ -2086,7 +2156,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     if uses_keywords:
         lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, text))
         if lc_not:
-            lc_not_str = word_join(lc_not, prefix='"', suffix='"')
+            lc_not_str = word_join(list(lc_not), prefix='"', suffix='"')
             result["comment"].append(
                 wrap_para(
                     f'Using lowercase "not" together with an uppercase '
@@ -2118,7 +2188,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     else:
         result["comment"].append(
             wrap_para(
-                'TLP Section 6(a) "Submission Compliance for '
+                'TLP Section 6.a "Submission Compliance for '
                 'Internet-Drafts" boilerplate text seems to have issues.',
                 width=width,
             )
@@ -2139,13 +2209,50 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             )
         )
 
-    if re.search(COPYRIGHT, sotm):
-        sotm = re.sub(COPYRIGHT, r"", sotm)
+    if re.search(COPYRIGHT_IETF, sotm):
+        sotm = re.sub(COPYRIGHT_IETF, r"", sotm)
+    elif re.search(COPYRIGHT_ALT_STREAMS, sotm):
+        sotm = re.sub(COPYRIGHT_ALT_STREAMS, r"", sotm)
+        result["comment"].append(
+            wrap_para(
+                'Document contains a TLP Section 6.b.ii "alternate streams" '
+                "boilerplate.",
+                width=width,
+            )
+        )
     else:
         result["comment"].append(
             wrap_para(
-                'TLP Section 6(b) "Copyright and License Notice" boilerplate'
+                'TLP Section 6.b "Copyright and License Notice" boilerplate'
                 "text seems to have issues.",
+                width=width,
+            )
+        )
+
+    if re.search(NO_MOD_RFC, sotm):
+        sotm = re.sub(NO_MOD_RFC, r"", sotm)
+        result["comment"].append(
+            wrap_para(
+                "Document limits derivative works and/or RFC publication with "
+                "a TLP Section 6.c.i boilerplate.",
+                width=width,
+            )
+        )
+    elif re.search(NO_MOD_NO_RFC, sotm):
+        sotm = re.sub(NO_MOD_NO_RFC, r"", sotm)
+        result["comment"].append(
+            wrap_para(
+                "Document limits derivative works and/or RFC publication with "
+                "a TLP Section 6.c.ii boilerplate.",
+                width=width,
+            )
+        )
+    elif re.search(PRE_5378, sotm):
+        sotm = re.sub(PRE_5378, r"", sotm)
+        result["comment"].append(
+            wrap_para(
+                "Document limits derivative works and/or RFC publication with "
+                'a TLP Section 6.c.iii "pre-5378" boilerplate.',
                 width=width,
             )
         )
@@ -2275,6 +2382,9 @@ def review_items(
     current_directory = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         log.debug("tmp dir %s", tmp)
+        if not items:
+            items = ["/dev/stdin"]
+
         for item in items:
             if os.path.isdir(item):
                 for dir_item in os.listdir(item):
@@ -2283,21 +2393,23 @@ def review_items(
                         items.append(dir_item)
                 continue
 
-            if not os.path.isfile(item):
+            if not os.path.exists(item):
                 log.warning("%s does not exist, skipping", item)
                 continue
 
-            os.chdir(tmp)
-            orig_item = os.path.basename(item)
-            get_items([orig_item], state.datatracker)
-            orig = read(orig_item)
-            os.chdir(current_directory)
+            orig = None
+            if item != "/dev/stdin":
+                os.chdir(tmp)
+                orig_item = os.path.basename(item)
+                get_items([orig_item], state.datatracker)
+                orig = read(orig_item)
+                os.chdir(current_directory)
             rev = read(item)
             if orig is None:
                 log.error(
                     "No original for %s, cannot review, "
                     "only performing checks",
-                    orig_item,
+                    item,
                 )
                 orig = rev
             orig_lines = orig.splitlines(keepends=True)
@@ -2305,6 +2417,7 @@ def review_items(
             review = review_item(orig_lines, rev)
             status = get_status(orig)
             name = basename(item)
+            not_id = not name.startswith("draft-")
 
             if chk_misc:
                 unescaped = html.unescape(orig)
@@ -2335,7 +2448,7 @@ def review_items(
                             )
                         )
 
-            if chk_boilerpl:
+            if chk_boilerpl and not not_id:
                 review_extend(
                     review, check_boilerplate(orig, status, state.width)
                 )
@@ -2360,7 +2473,7 @@ def review_items(
                     ),
                 )
 
-            if chk_refs:
+            if chk_refs and not not_id:
                 review_extend(
                     review,
                     check_refs(
@@ -2371,6 +2484,7 @@ def review_items(
                         name,
                         status,
                         meta,
+                        orig,
                     ),
                 )
 
@@ -2391,6 +2505,18 @@ def review_items(
                     review["nit"].append("\n")
                     urls -= set(result)
 
+                result = []
+                for url in urls:
+                    if not re.search(r"^https?:", url, re.IGNORECASE):
+                        result.append(url)
+
+                if result:
+                    review["nit"].append(
+                        "Found non-HTTP URLs in the document:\n",
+                    )
+                    review["nit"].extend(f" * {line}\n" for line in result)
+                    review["nit"].append("\n")
+
                 reachability = {u: fetch_url(u, verbose, "HEAD") for u in urls}
                 result = []
                 for url in urls:
@@ -2409,7 +2535,7 @@ def review_items(
                     if url.startswith("https:"):
                         continue
                     if reachability[url] is not None:
-                        test_url = re.sub(r"^http:", r"https:", url)
+                        test_url = re.sub(r"^\w+:", r"https:", url)
                         if fetch_url(test_url, verbose, "HEAD") is not None:
                             result.append(url)
 
