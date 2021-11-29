@@ -597,7 +597,10 @@ def get_items_on_agenda(agenda: dict) -> list:
             for doc_type in ["docs", "wgs"]:
                 if doc_type in sec:
                     for doc in sec[doc_type]:
-                        items.append(doc["docname"] + "-" + doc["rev"])
+                        items.append(
+                            doc["docname"]
+                            + ("-" + doc["rev"] if "rev" in doc else "")
+                        )
     return items
 
 
@@ -688,7 +691,7 @@ def fetch_dt(datatracker: str, query: str) -> dict:
 
     @return     The query results.
     """
-    api = "/api/v1/doc/"
+    api = "/api/v1/"
     if not query.startswith(api):
         query = api + query
     if re.search(r"\?", query):
@@ -729,7 +732,7 @@ def get_writeups(datatracker: str, item: str) -> str:
                 None.
     """
     doc_events = fetch_dt(
-        datatracker, "writeupdocevent/?doc__name=" + basename(item)
+        datatracker, "doc/writeupdocevent/?doc__name=" + basename(item)
     )
     if not doc_events:
         return None
@@ -817,6 +820,7 @@ def get_items(
         cache = None
         text = None
         url = None
+        match = re.search(r"^(conflict-review|status-change)-", item)
         if item.startswith("draft-"):
             url = "https://ietf.org/archive/id/" + file_name
             cache = os.getenv("IETF_IDS")
@@ -831,15 +835,16 @@ def get_items(
             # TODO: the charters in rsync don't have milestones, can't use
             # cache = os.getenv("IETF_CHARTERS")
             do_strip = False
-        elif item.startswith("conflict-review-"):
-            doc = re.sub(r"conflict-review-(.*)", r"draft-\1", item)
+        elif match:
+            which = match[1]
+            doc = re.sub(which + r"-(.*)", r"draft-\1", item)
             text = get_writeups(datatracker, doc)
-            # TODO: in-progress conflict-reviews are not in the cache
-            # cache = os.getenv("IETF_CONFLICT_REVIEWS")
+            # in-progress conflict-reviews/status-changes are not in the cache
             doc = basename(doc)
+            slug = "conflrev" if which == "conflict-review" else "statchg"
             target = fetch_dt(
                 datatracker,
-                "relateddocument/?relationship__slug=conflrev&target__name="
+                f"doc/relateddocument/?relationship__slug={slug}&target__name="
                 + doc,
             )
             if not target:
@@ -1015,14 +1020,16 @@ def gather_nits(diff: list) -> list:
     result = []
 
     for num, cur in enumerate(diff):
+        # print(cur, end="")
         kind = cur[0]
-
-        if cur in ["+ \n", "- \n"]:
-            prev = kind
-            continue
 
         nxt = diff[num + 1] if num < len(diff) - 1 else None
         nxt_kind = nxt[0] if nxt else None
+
+        if cur in ["+ \n", "- \n"]:
+            prev = kind
+            if nxt:
+                continue
 
         if kind in ["+", "-"] and nxt_kind == "?":
             changed[kind].append(cur)
@@ -1030,7 +1037,7 @@ def gather_nits(diff: list) -> list:
         elif kind == "?" and prev in ["+", "-"]:
             indicator[prev].append(cur)
 
-        elif kind in ["+", "-"] and prev == "?":
+        elif kind in ["+", "-"]:
             changed[kind].append(cur)
             indicator[kind].append(None)
 
@@ -1044,6 +1051,9 @@ def gather_nits(diff: list) -> list:
 
         elif changed["-"] or changed["+"]:
             result.extend(fmt_nit(changed, indicator, para_sec))
+
+        elif not nxt and kind != " ":
+            changed[kind].append(cur)
 
         if nxt:
             para_sec = section_and_paragraph(nxt, cur, para_sec)
@@ -1316,11 +1326,15 @@ def extract_refs(text: list) -> dict:
         if pot_sec:
             which = pot_sec.group(0)
             if re.search(
-                r"^(\d\.?)+\s+Informative\s+References?", which, re.IGNORECASE
+                r"^(\d\.?)+\s+Informative\s+References?",
+                which,
+                flags=re.IGNORECASE,
             ):
                 part = "informative"
             elif re.search(
-                r"^(\d\.?)+\s+(Normative\s+)?References?", which, re.IGNORECASE
+                r"^(\d\.?)+\s+(Normative\s+)?References?",
+                which,
+                flags=re.IGNORECASE,
             ):
                 part = "normative"
             else:
@@ -1397,7 +1411,11 @@ def is_downref(level: str, kind: str, ref_level: str) -> bool:
 
     @return     True if this is a DOWNREF, True otherwise.
     """
-    if kind.lower() == "normative":
+    kind = kind.lower()
+    level = level.lower()
+    ref_level = ref_level.lower()
+
+    if kind == "normative":
         rank = {
             "internet standard": 3,
             "full standard": 3,
@@ -1409,8 +1427,13 @@ def is_downref(level: str, kind: str, ref_level: str) -> bool:
             "informational": 0,
             "unknown": 0,
         }
-        return rank[level.lower()] > rank[ref_level.lower()]
-    if kind.lower() == "informative":
+
+        if ref_level == "best current practice":
+            return rank[level] < 1
+
+        return rank[level] > rank[ref_level]
+
+    if kind == "informative":
         return False
     die(f"unknown kind {kind}")
 
@@ -1424,7 +1447,8 @@ def fetch_downrefs(datatracker: str) -> list:
     @return     A list of RFC names.
     """
     downrefs = fetch_dt(
-        datatracker, "relateddocument/?relationship=downref-approval&limit=0"
+        datatracker,
+        "doc/relateddocument/?relationship=downref-approval&limit=0",
     )
     return [re.sub(r".*(rfc\d+).*", r"\1", d["target"]) for d in downrefs]
 
@@ -1472,7 +1496,7 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     review = {"discuss": [], "comment": [], "nit": []}
     isb_url = (
         "https://raw.githubusercontent.com/"
-        "NTAP/isb-ietf-config/main/.github/in-solidarity.yml"
+        "ietf/terminology/main/.github/in-solidarity.yml"
     )
     isb_yaml = fetch_url(isb_url)
 
@@ -1485,10 +1509,10 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     for name, data in rules["rules"].items():
         for pattern in data["regex"]:
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
-            hits = re.findall(pattern, text, re.IGNORECASE)
+            hits = re.findall(pattern, text, flags=re.IGNORECASE)
             if hits:
                 result[name] = (
-                    list(filter(None, set(itertools.chain(*hits)))),
+                    list(set(map(str.lower, itertools.chain(*hits)))),
                     pattern,
                     data["alternatives"] if "alternatives" in data else None,
                 )
@@ -1591,14 +1615,14 @@ def check_refs(
             word_join(list(in_text - both)), width=width
         )
         result["comment"].append(
-            f"No reference entries found for: {ref_list}\n\n"
+            f"No reference entries found for: {ref_list}.\n\n"
         )
 
     if both - in_text:
         ref_list = wrap_and_indent(
             word_join(list(both - in_text)), width=width
         )
-        result["nit"].append(f"Uncited references: {ref_list}\n\n")
+        result["nit"].append(f"Uncited references: {ref_list}.\n\n")
 
     for rel, docs in rels.items():
         for doc in docs:
@@ -1618,7 +1642,9 @@ def check_refs(
     level = meta and (meta["std_level"] or meta["intended_std_level"])
     if not level:
         # if we have no level from the metadata, see if the document has one
-        level = re.search(r"^Intended status: (.*)\s{2,}", text, re.MULTILINE)
+        level = re.search(
+            r"^Intended status: (.*)\s{2,}", text, flags=re.MULTILINE
+        )
         level = level[1].rstrip() if level else "unknown"
 
     for kind in ["normative", "informative"]:
@@ -1702,7 +1728,8 @@ def check_refs(
 
             obsoleted_by = fetch_dt(
                 datatracker,
-                "relateddocument/?relationship__slug=obs&target__name=" + name,
+                "doc/relateddocument/?relationship__slug=obs&target__name="
+                + name,
             )
             if obsoleted_by:
                 ob_bys = []
@@ -1761,11 +1788,12 @@ def get_relationships(
     doc: str,
 ) -> dict:
     """
-    Extract the documents that are intended to be updated by this document.
+    Extract the RFCs that are intended to be updated or obsoleted by this
+    document.
 
     @param      doc   The document to extract the information from
 
-    @return     A list of documents
+    @return     A dict of relationships and lists of RFC *numbers*
     """
     result = {}
     pat = {"updates": r"[Uu]pdates", "obsoletes": r"[Oo]bsoletes"}
@@ -1780,6 +1808,7 @@ def get_relationships(
         )
         if match:
             result[rel] = "".join([group for group in match.groups() if group])
+            result[rel] = re.sub("rfc", "", result[rel], flags=re.IGNORECASE)
             result[rel] = re.sub(r"[,\s]+(\w)", r",\1", result[rel])
             result[rel] = result[rel].strip().split(",")
     return result
@@ -1793,7 +1822,7 @@ def check_xml(doc: str) -> None:
 
     @return     List of issues found
     """
-    snippets = re.finditer(r"^(.*)<\?xml\s", doc, re.MULTILINE)
+    snippets = re.finditer(r"^(.*)<\?xml\s", doc, flags=re.MULTILINE)
     for snip in snippets:
         start = re.search(r"<\s*(\w+)", doc[snip.start() :])
         if not start:
@@ -1997,14 +2026,16 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
         meta["iana_review_state"] if "iana_review_state" in meta else None
     )
     if iana_review_state:
-        if re.match(r".*Not\s+OK", iana_review_state, re.IGNORECASE):
+        if re.match(r".*Not\s+OK", iana_review_state, flags=re.IGNORECASE):
             result["comment"].append(
                 wrap_para(
                     "This document seems to have unresolved IANA issues.",
                     width=width,
                 )
             )
-        elif re.match(r".*Review\s+Needed", iana_review_state, re.IGNORECASE):
+        elif re.match(
+            r".*Review\s+Needed", iana_review_state, flags=re.IGNORECASE
+        ):
             result["comment"].append(
                 wrap_para(
                     "The IANA review of this document seems to not have "
@@ -2012,8 +2043,6 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
                     width=width,
                 )
             )
-    else:
-        log.warning("No IANA review state?")
 
     consensus = meta["consensus"] if "consensus" in meta else None
     if not consensus:
@@ -2116,14 +2145,15 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             used_keywords.append(normalize_ws(word))
         used_keywords = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
-        if status.lower() in ["informational", "experimental"]:
-            result["comment"].append(
-                wrap_para(
-                    f"Document has {status} status, but uses the RFC2119 "
-                    f"{kw_text} {used_keywords}.",
-                    width=width,
-                )
-            )
+
+        # if status.lower() in ["informational", "experimental"]:
+        #     result["comment"].append(
+        #         wrap_para(
+        #             f"Document has {status} status, but uses the RFC2119 "
+        #             f"{kw_text} {used_keywords}.",
+        #             width=width,
+        #         )
+        #     )
 
         if not has_8174_boilerplate:
             msg = (
@@ -2172,13 +2202,15 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             continue
         if len(sotm) == 0:
             if re.match(
-                r"^\s*Status\s+of\s+This\s+Memo\s*$", line, re.IGNORECASE
+                r"^\s*Status\s+of\s+This\s+Memo\s*$", line, flags=re.IGNORECASE
             ):
                 sotm += " "
             continue
         if re.match(r"^\s*Copyright Notice\s*$", line):
             continue
-        if re.match(r"^\s*Table\s+of\s+Contents\s*$", line, re.IGNORECASE):
+        if re.match(
+            r"^\s*Table\s+of\s+Contents\s*$", line, flags=re.IGNORECASE
+        ):
             break
         sotm += line
     sotm = unfold(sotm)
@@ -2346,6 +2378,12 @@ def review_extend(review: dict, extension: dict) -> dict:
     default=None,
     help="Check boilerplate for TLP issues.",
 )
+@click.option(
+    "--thank-art",
+    "thank_art",
+    default="genart",
+    help="Generate a thank-you for the given Area Review Team reviewer.",
+)
 @click.pass_obj
 def review_items(
     state: object,
@@ -2358,6 +2396,7 @@ def review_items(
     chk_boilerpl: bool,
     chk_misc: bool,
     chk_tlp: bool,
+    thank_art: str,
     grammar_skip_rules: str,
 ) -> None:
     """
@@ -2434,7 +2473,9 @@ def review_items(
                     for line in diff:
                         if re.search(r"^- ", line):
                             entities.extend(
-                                re.findall(r"(&#?\w+;)", line, re.IGNORECASE)
+                                re.findall(
+                                    r"(&#?\w+;)", line, flags=re.IGNORECASE
+                                )
                             )
 
                     if entities:
@@ -2493,7 +2534,9 @@ def review_items(
                 urls = extract_urls(orig)
 
                 for url in urls:
-                    if re.search(r"://tools\.ietf\.org", url, re.IGNORECASE):
+                    if re.search(
+                        r"://tools\.ietf\.org", url, flags=re.IGNORECASE
+                    ):
                         result.append(url)
 
                 if result:
@@ -2507,7 +2550,7 @@ def review_items(
 
                 result = []
                 for url in urls:
-                    if not re.search(r"^https?:", url, re.IGNORECASE):
+                    if not re.search(r"^https?:", url, flags=re.IGNORECASE):
                         result.append(url)
 
                 if result:
@@ -2553,6 +2596,83 @@ def review_items(
                     check_inclusivity(
                         unfold("".join(rev)), state.width, verbose
                     ),
+                )
+
+            art_reviews = fetch_dt(
+                state.datatracker,
+                "doc/reviewassignmentdocevent/?doc__name=" + name,
+            )
+
+            if art_reviews:
+                for rev_assignment in art_reviews:
+                    if rev_assignment["type"] != "closed_review_assignment":
+                        continue
+
+                    assignment = fetch_dt(
+                        state.datatracker, rev_assignment["review_assignment"]
+                    )
+
+                    if not assignment:
+                        log.warning(
+                            "Could not fetch review_assignment for %s", name
+                        )
+                        continue
+
+                    reviewer = fetch_dt(
+                        state.datatracker, assignment["reviewer"]
+                    )
+
+                    if not reviewer:
+                        log.warning("Could not fetch reviewer for %s", name)
+                        continue
+
+                    reviewer = fetch_dt(state.datatracker, reviewer["person"])
+
+                    if not reviewer:
+                        log.warning("Could not fetch reviewer for %s", name)
+                        continue
+
+                    if assignment["state"].endswith("rejected/"):
+                        log.debug("Review for %s was rejected", name)
+                        continue
+
+                    if assignment["state"].endswith("no-response/"):
+                        log.debug("Review for %s was not completed", name)
+                        continue
+
+                    art_review = fetch_dt(
+                        state.datatracker, assignment["review"]
+                    )
+
+                    if not art_review:
+                        log.warning("Could not fetch review for %s", name)
+                        continue
+
+                    group = fetch_dt(state.datatracker, art_review["group"])
+
+                    if not group:
+                        log.warning("Could not fetch ART for %s", name)
+                        continue
+
+                    if group["acronym"].lower() == thank_art.lower():
+                        review["comment"].append(
+                            wrap_para(
+                                "Thanks to "
+                                + (
+                                    reviewer["name_from_draft"]
+                                    or reviewer["name"]
+                                )
+                                + f" for their {group['name']} review "
+                                f"({art_review['external_url']})."
+                            )
+                        )
+
+            else:
+                log.warning("Could not fetch ART reviews for %s", name)
+
+            if name.startswith("charter-"):
+                review["comment"].append(
+                    "Note to self: Ask about any chair changes.\n\n",
                 )
 
             fmt_review(review, state.width)
