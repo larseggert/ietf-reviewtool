@@ -50,7 +50,9 @@ log = logging.getLogger(__name__)
 # pattern matching section headings
 SECTION_PATTERN = re.compile(
     r"""^(?:[\- ]\s)?(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
-        Table\sof\sContents|Author(?:'?s?'?)?\sAddress(?:es)?|
+        Editorial\sNote|Table\sof\sContents|
+        (?:Normative\s|Informative\s)?References?|
+        Author(?:'?s?'?)?\sAddress(?:es)?|
         (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?\s|
         \d+(?:\.\d+)*\.?)(.*)""",
     re.VERBOSE,
@@ -1037,7 +1039,7 @@ def gather_nits(diff: list) -> list:
         elif kind == "?" and prev in ["+", "-"]:
             indicator[prev].append(cur)
 
-        elif kind in ["+", "-"]:
+        elif kind in ["-"]:  # FIXME: this catches nits: ["+", "-"]:
             changed[kind].append(cur)
             indicator[kind].append(None)
 
@@ -1326,13 +1328,13 @@ def extract_refs(text: list) -> dict:
         if pot_sec:
             which = pot_sec.group(0)
             if re.search(
-                r"^(\d\.?)+\s+Informative\s+References?",
+                r"^(?:(\d\.?)+\s+)?Informative\s+References?",
                 which,
                 flags=re.IGNORECASE,
             ):
                 part = "informative"
             elif re.search(
-                r"^(\d\.?)+\s+(Normative\s+)?References?",
+                r"^(?:(\d\.?)+\s+)?(Normative\s+)?References?",
                 which,
                 flags=re.IGNORECASE,
             ):
@@ -1511,6 +1513,7 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
             hits = re.findall(pattern, text, flags=re.IGNORECASE)
             if hits:
+                hits = [hit for hit in hits if hit != ""]
                 result[name] = (
                     list(set(map(str.lower, itertools.chain(*hits)))),
                     pattern,
@@ -1718,13 +1721,14 @@ def check_refs(
                             )
                         )
                     else:
-                        result["discuss"].append(
-                            wrap_para(
-                                f"DOWNREF {tag} from this {level} to "
-                                f"{ref_level} {display_name}.",
-                                width=width,
+                        msg = f"DOWNREF {tag} from this {level} to "
+                        if ref_level != "unknown":
+                            msg += f"{ref_level} {display_name}."
+                        else:
+                            msg += (
+                                f"{display_name} of unknown standards level."
                             )
-                        )
+                        result["discuss"].append(wrap_para(msg, width=width))
 
             obsoleted_by = fetch_dt(
                 datatracker,
@@ -2065,8 +2069,12 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     status = get_status(text)
     for rel, docs in get_relationships(text).items():
         if rel == "updates":
-            abstract = extract_abstract(text)
-            if not re.search(r"updates", abstract):
+            abstract = unfold(extract_abstract(text))
+            missing_docs = []
+            for doc in docs:
+                if not re.search(r"RFC\s" + doc, abstract):
+                    missing_docs.append(doc)
+            if missing_docs:
                 updates = word_join(docs, prefix="RFC")
                 result["discuss"].append(
                     wrap_para(
@@ -2118,6 +2126,16 @@ def check_tlp(text: str, status: str, width: int) -> dict:
         if status.lower() == "standards track":
             msg += " And it cannot be published on the Standards Track."
         result["discuss"].append(wrap_para(msg, width=width))
+
+    if re.search(r"Simplified\s+BSD\s+License", text, flags=re.IGNORECASE):
+        result["comment"].append(
+            wrap_para(
+                'Document still refers to the "Simplified BSD License", which '
+                "was corrected in the TLP on September 21, 2021. It should "
+                'instead refer to the "Revised BSD License".',
+                width=width,
+            )
+        )
 
     return result
 
@@ -2283,8 +2301,8 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
         sotm = re.sub(PRE_5378, r"", sotm)
         result["comment"].append(
             wrap_para(
-                "Document limits derivative works and/or RFC publication with "
-                'a TLP Section 6.c.iii "pre-5378" boilerplate.',
+                'Document has a TLP Section 6.c.iii "pre-5378" boilerplate. '
+                "Is this really needed?",
                 width=width,
             )
         )
@@ -2638,6 +2656,10 @@ def review_items(
 
                     if assignment["state"].endswith("no-response/"):
                         log.debug("Review for %s was not completed", name)
+                        continue
+
+                    if assignment["state"].endswith("withdrawn/"):
+                        log.debug("Review for %s was withdrawn", name)
                         continue
 
                     art_review = fetch_dt(
