@@ -1115,12 +1115,13 @@ def strip_nits_from_diff(diff: list) -> list:
     return result
 
 
-def fmt_comment(item: dict, para_sec: list) -> list:
+def fmt_comment(item: dict, para_sec: list, width: int) -> list:
     """
     Format a comment.
 
     @param      item      The comment item dict
     @param      para_sec  The current (paragraph number, section name) list
+    @param      width     The width to wrap to
 
     @return     The formatted comment.
     """
@@ -1128,20 +1129,22 @@ def fmt_comment(item: dict, para_sec: list) -> list:
     result.extend([re.sub(r".(.*)", r">\1", x) for x in item["ctx"]])
     if item["ctx"]:
         result.append("\n")
-    result.extend([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
-    if item["txt"]:
-        result.append("\n")
+    txt = "".join([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
+    result.append(
+        wrap_para(txt, width=width, end="\n\n" if item["txt"] else "")
+    )
     if item["ctx"]:
         para_sec[0] -= 1  # don't count this as a paragraph
     item.clear()
     return result
 
 
-def gather_comments(diff: list) -> dict:
+def gather_comments(diff: list, width: int) -> dict:
     """
     Return a dict that contains lists of all comments of all categories.
 
-    @param      diff  A diff with nits removed (by strip_nits_from_diff)
+    @param      diff   A diff with nits removed (by strip_nits_from_diff)
+    @param      width  The width to wrap to
 
     @return     A review dict.
     """
@@ -1155,7 +1158,7 @@ def gather_comments(diff: list) -> dict:
         start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
         if start and start.group(1):
             if "cat" in item:
-                result[item["cat"]].extend(fmt_comment(item, para_sec))
+                result[item["cat"]].extend(fmt_comment(item, para_sec, width))
             item["cat"] = start.group(1).lower()
             item["ctx"] = []
             item["ctx_ok"] = start.group(2) != ""
@@ -1181,19 +1184,20 @@ def gather_comments(diff: list) -> dict:
                     item["txt"].append(cur)
 
             if item["txt_ok"] or nxt is None:
-                result[item["cat"]].extend(fmt_comment(item, para_sec))
+                result[item["cat"]].extend(fmt_comment(item, para_sec, width))
 
         para_sec = section_and_paragraph(nxt, cur, para_sec)
 
     return result
 
 
-def review_item(orig: list, rev: list) -> dict:
+def review_item(orig: list, rev: list, width: int) -> dict:
     """
     Calculates a diff between orig and rev.
 
-    @param      orig  The original text
-    @param      rev   The revised text
+    @param      orig   The original text
+    @param      rev    The revised text
+    @param      width  The width to wrap to
 
     @return     A diff between orig and rev.
     """
@@ -1208,7 +1212,7 @@ def review_item(orig: list, rev: list) -> dict:
 
     nits = gather_nits(diff)
     diff = strip_nits_from_diff(diff)
-    review = gather_comments(diff)
+    review = gather_comments(diff, width)
     review["nit"].extend(nits)
     return review
 
@@ -1545,6 +1549,20 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     return review
 
 
+def fetch_rfcs_in_lc(name: str) -> list:
+    """
+    Fetches a RFC numbers mentioned in the last-call message. The *assumption*
+    is that they are all called-out downrefs.
+
+    @param      name         The name of this document.
+
+    @return     The RFC numbers mention in the last-call email.
+    """
+    last_call = read("last_call_text/" + name)
+    rfcs = set(re.findall(r"rfc\s*(\d+)", last_call, flags=re.IGNORECASE))
+    return [f"rfc{n}" for n in rfcs]
+
+
 def check_refs(
     datatracker: str,
     refs: dict,
@@ -1570,7 +1588,8 @@ def check_refs(
     @return     List of messages.
     """
     result = {"discuss": [], "comment": [], "nit": []}
-    downrefs = fetch_downrefs(datatracker)
+    downrefs_in_registry = fetch_downrefs(datatracker)
+    rfcs_in_lc = fetch_rfcs_in_lc(meta["name"] + "-" + meta["rev"] + ".txt")
 
     # remove self-mentions from extracted references in the text
     refs["text"] = [r for r in refs["text"] if not untag(r).startswith(name)]
@@ -1655,7 +1674,7 @@ def check_refs(
             if doc:
                 name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", doc)
             if not doc or not name:
-                log.info(
+                log.debug(
                     "No metadata available for %s reference %s (%s)",
                     kind,
                     tag,
@@ -1711,7 +1730,11 @@ def check_refs(
                     or ref_meta["intended_std_level"]
                     or "unknown"
                 )
-                if is_downref(level, kind, ref_level) and name not in downrefs:
+                if (
+                    is_downref(level, kind, ref_level)
+                    and name not in downrefs_in_registry
+                    and name not in rfcs_in_lc
+                ):
                     if ref_level is None:
                         result["comment"].append(
                             wrap_para(
@@ -1868,7 +1891,7 @@ def check_grammar(
     """
     issues = [
         i
-        for i in language_tool_python.LanguageTool("en").check(
+        for i in language_tool_python.LanguageTool("en-US").check(
             unfold("".join(review))
         )
         if i.ruleId
@@ -1883,7 +1906,10 @@ def check_grammar(
             "CURRENCY",
             "DASH_RULE",
             "DATE_FUTURE_VERB_PAST",
+            "DATE_NEW_YEAR",
             "EN_QUOTES",
+            "EN_REPEATEDWORDS_NEED",
+            "EN_REPEATEDWORDS_OFTEN",
             "EN_UNPAIRED_BRACKETS",
             "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
             "HYPOTHESIS_TYPOGRAPHY",
@@ -1892,6 +1918,7 @@ def check_grammar(
             "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
             "KEY_WORDS",
             "LARGE_NUMBER_OF",
+            "MORFOLOGIK_RULE_EN_US",
             "MULTIPLICATION_SIGN",
             "PLUS_MINUS",
             "PUNCTUATION_PARAGRAPH_END",
@@ -2273,7 +2300,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     else:
         result["comment"].append(
             wrap_para(
-                'TLP Section 6.b "Copyright and License Notice" boilerplate'
+                'TLP Section 6.b "Copyright and License Notice" boilerplate '
                 "text seems to have issues.",
                 width=width,
             )
@@ -2310,7 +2337,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     if sotm:
         result["comment"].append(
             wrap_para(
-                f'Found stray text in boilerplate: "{sotm}"',
+                f'Found stray text in boilerplate: "{sotm.strip()}"',
                 width=width,
             )
         )
@@ -2471,7 +2498,7 @@ def review_items(
                 orig = rev
             orig_lines = orig.splitlines(keepends=True)
             rev = rev.splitlines(keepends=True)
-            review = review_item(orig_lines, rev)
+            review = review_item(orig_lines, rev, width=state.width)
             status = get_status(orig)
             name = basename(item)
             not_id = not name.startswith("draft-")
