@@ -1559,6 +1559,8 @@ def fetch_rfcs_in_lc(name: str) -> list:
     @return     The RFC numbers mention in the last-call email.
     """
     last_call = read("last_call_text/" + name)
+    if not last_call:
+        return []
     rfcs = set(re.findall(r"rfc\s*(\d+)", last_call, flags=re.IGNORECASE))
     return [f"rfc{n}" for n in rfcs]
 
@@ -1589,7 +1591,11 @@ def check_refs(
     """
     result = {"discuss": [], "comment": [], "nit": []}
     downrefs_in_registry = fetch_downrefs(datatracker)
-    rfcs_in_lc = fetch_rfcs_in_lc(meta["name"] + "-" + meta["rev"] + ".txt")
+    rfcs_in_lc = (
+        fetch_rfcs_in_lc(meta["name"] + "-" + meta["rev"] + ".txt")
+        if meta
+        else []
+    )
 
     # remove self-mentions from extracted references in the text
     refs["text"] = [r for r in refs["text"] if not untag(r).startswith(name)]
@@ -1838,6 +1844,7 @@ def get_relationships(
             result[rel] = re.sub("rfc", "", result[rel], flags=re.IGNORECASE)
             result[rel] = re.sub(r"[,\s]+(\w)", r",\1", result[rel])
             result[rel] = result[rel].strip().split(",")
+            result[rel] = [r for r in result[rel] if r]
     return result
 
 
@@ -2099,7 +2106,7 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
             abstract = unfold(extract_abstract(text))
             missing_docs = []
             for doc in docs:
-                if not re.search(r"RFC\s" + doc, abstract):
+                if not re.search(r"RFC\s*" + doc, abstract):
                     missing_docs.append(doc)
             if missing_docs:
                 updates = word_join(docs, prefix="RFC")
@@ -2114,7 +2121,11 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
 
         for doc in docs:
             meta = fetch_meta(datatracker, "rfc" + doc)
-            level = meta["std_level"] or meta["intended_std_level"]
+            level = (
+                meta["std_level"] or meta["intended_std_level"]
+                if meta
+                else "Unknown"
+            )
             if not relationship_ok(status, level):
                 result["discuss"].append(
                     wrap_para(
