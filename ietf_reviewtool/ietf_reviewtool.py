@@ -3,7 +3,7 @@
 """
 Review tool for IETF documents.
 
-Copyright (C) 2021  Lars Eggert
+Copyright (C) 2021-2022  Lars Eggert
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -24,6 +24,7 @@ SPDX-License-Identifier: GPL-2.0
 import datetime
 import difflib
 import html
+import ipaddress
 import itertools
 import json
 import logging
@@ -43,6 +44,7 @@ import click
 import language_tool_python
 import requests
 import requests_cache
+import urlextract
 import yaml
 
 log = logging.getLogger(__name__)
@@ -51,7 +53,7 @@ log = logging.getLogger(__name__)
 SECTION_PATTERN = re.compile(
     r"""^(?:[\- ]\s)?(Abstract|Status\sof\sThis\sMemo|Copyright\sNotice|
         Editorial\sNote|Table\sof\sContents|
-        (?:Normative\s|Informative\s)?References?|
+        (?:(?:Non-)Normative\s|Informative\s)?References?|
         Author(?:'?s?'?)?\sAddress(?:es)?|
         (?:Appendix\s+)?[\dA-Z]+(?:\.\d+)*\.?\s|
         \d+(?:\.\d+)*\.?)(.*)""",
@@ -167,8 +169,8 @@ ID_GUIDELINES_PATTERNS = [
         False,
         re.compile(
             r"""The\s+list\s+of\s+current\s+Internet-Drafts\s+can\s+be\s+
-            accessed\s+at\s+https?://www\.ietf\.org/1id-abstracts\.
-            html\.\s+""",
+            accessed\s+at\s+https?://www\.ietf\.org/(?:ietf/)?1id-abstracts\.
+            (?:html|txt)\.?\s*""",
             re.VERBOSE,
         ),
     ),
@@ -176,7 +178,7 @@ ID_GUIDELINES_PATTERNS = [
         False,
         re.compile(
             r"""The\s+list\s+of\s+Internet-Draft\s+Shadow\s+Directories\s+can\s+
-            be\s+accessed\s+at\s+https?://www\.ietf\.org/shadow\.html\.\s+""",
+            be\s+accessed\s+at\s+https?://www\.ietf\.org/shadow\.html\.?\s*""",
             re.VERBOSE,
         ),
     ),
@@ -241,6 +243,12 @@ PRE_5378 = re.compile(
     other\s+than\s+English\.\s*""",
     re.VERBOSE,
 )
+
+TEST_NET_1 = ipaddress.ip_network("192.0.2.0/24")
+TEST_NET_2 = ipaddress.ip_network("198.51.100.0/24")
+TEST_NET_3 = ipaddress.ip_network("203.0.113.0/24")
+MCAST_TEST_NET = ipaddress.ip_network("233.252.0.0/24")
+TEST_NET_V6 = ipaddress.ip_network("2001:db8::/32")
 
 
 class State:
@@ -324,13 +332,13 @@ def normalize_ws(string: str) -> str:
     return re.sub(r"\s+", r" ", string)
 
 
-def word_join(words: list, oxford_comma=True, prefix="", suffix="") -> str:
+def word_join(words: list, ox_comma=True, prefix="", suffix="") -> str:
     """
     Join list items using commas and "and", optionally each prefixed by
     something.
 
     @param      words         The words to join
-    @param      oxford_comma  Whether to use the oxford comma
+    @param      ox_comma      Whether to use the oxford comma
     @param      prefix        A prefix to use for each word
     @param      suffix        A suffix to use for each word
 
@@ -344,7 +352,7 @@ def word_join(words: list, oxford_comma=True, prefix="", suffix="") -> str:
         return f"{prefix}{words[0]}{suffix} and {prefix}{words[1]}{suffix}"
     return (
         f'{prefix}{f"{suffix}, {prefix}".join(words[:-1])}'
-        f'{"," if oxford_comma else ""} and {prefix}{words[-1]}{suffix}'
+        f'{suffix}{"," if ox_comma else ""} and {prefix}{words[-1]}{suffix}'
     )
 
 
@@ -462,7 +470,7 @@ def unfold(text: str) -> str:
     folded = re.sub(r"\n{2,}\s*", rand, folded)
     folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
     # folded = re.sub(
-    #     r"([^a-z0-9])([a-z]{2,})://", r"\1\2://", folded, flags=re.IGNORECASE
+    #     r"([^a-z\d])([a-z]{2,})://", r"\1\2://", folded, flags=re.IGNORECASE
     # )
     folded = re.sub(r"([\-/])\n([^\(])", r"\1\2", folded)
     folded = re.sub(r"\n", r" ", folded)
@@ -505,6 +513,29 @@ def extract_urls_from_items(
         print(url)
 
 
+def extract_ips(text: str) -> set:
+    """
+    Return a list of IP blocks in a text string.
+
+    @param      text  The text to extract IP blocks from
+
+    @return     List of IP blocks.
+    """
+
+    # find all IPs
+    return set(
+        re.findall(
+            r"""
+             (?:[\da-f]+:[\da-f]+(?::[\da-f]*)+)(?:/[\d]+)?|
+             (?:(?:\d{1,3}\.){3}\d{1,3}(?:/[\d\.]+)?)|
+             (?:(?:\d{1,3}\.){0,3}\d{1,3}/[\d\.]+)
+             """,
+            "\n".join(text),
+            flags=re.IGNORECASE | re.VERBOSE,
+        )
+    )
+
+
 def extract_urls(
     text: str, examples: bool = False, common: bool = False
 ) -> set:
@@ -519,17 +550,17 @@ def extract_urls(
     """
 
     # find all URLs
+    extractor = urlextract.URLExtract()
+    extractor.update_when_older(7)  # update TLDs when older than 7 days
     text = unfold(text)
     urls = []
-    for url in re.findall(
-        r"(?:[a-z]{2,})://(?:-\.)?(?:[^\s/?\.#)]+\.?)+(?:/[^\s)\">;]*)?",
-        text,
-        re.IGNORECASE,
-    ):
-        url = re.sub(r"(.*)[\"\']\s*\]\s*$", r"\1", url)
-        url = url.rstrip(".\"'>;,")
-        if not re.search(r"\[", url):
-            url = url.rstrip("]")
+    for url in extractor.gen_urls(text):
+        url = url.rstrip(".\"]'>;,")
+        # if not re.search(r"://", url):
+        #     url = "http://" + url
+        if re.match(r"[\d\.:a-f]+", url, flags=re.IGNORECASE):
+            # skip literal IP addresses
+            continue
         try:
             urllib.parse.urlparse(url).netloc
         except ValueError as err:
@@ -543,8 +574,10 @@ def extract_urls(
             u
             for u in urls
             if not re.search(
-                r"example\.(?:com|net|org)|\.example$",
-                urllib.parse.urlparse(u).netloc,
+                r"example\.(com|net|org)|\.example",
+                urllib.parse.urlparse(u).netloc
+                if urllib.parse.urlparse(u).netloc
+                else u,
                 re.IGNORECASE,
             )
         ]
@@ -1332,13 +1365,13 @@ def extract_refs(text: list) -> dict:
         if pot_sec:
             which = pot_sec.group(0)
             if re.search(
-                r"^(?:(\d\.?)+\s+)?Informative\s+References?",
+                r"^(?:(\d\.?)+\s+)?(?:Non-Norm|Inform)ative\s+References?\s*$",
                 which,
                 flags=re.IGNORECASE,
             ):
                 part = "informative"
             elif re.search(
-                r"^(?:(\d\.?)+\s+)?(Normative\s+)?References?",
+                r"^(?:(\d\.?)+\s+)?(Normative\s+)?References?\s*$",
                 which,
                 flags=re.IGNORECASE,
             ):
@@ -1354,7 +1387,7 @@ def extract_refs(text: list) -> dict:
             + (r"|RFC\d+|draft-[-a-z\d_.]+" if part == "text" else r"")
             + r")",
             unfold(parts[part]),
-            re.IGNORECASE,
+            flags=re.IGNORECASE,
         )
         refs[part] = {f"[{untag(ref)}]" for ref in refs[part]}
 
@@ -1501,8 +1534,9 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     """
     review = {"discuss": [], "comment": [], "nit": []}
     isb_url = (
-        "https://raw.githubusercontent.com/"
-        "ietf/terminology/main/.github/in-solidarity.yml"
+        # "file:///Users/lars/Documents/Code/terminology/"
+        "https://raw.githubusercontent.com/ietf/terminology/main/"
+        ".github/in-solidarity.yml"
     )
     isb_yaml = fetch_url(isb_url)
 
@@ -1517,9 +1551,9 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
             hits = re.findall(pattern, text, flags=re.IGNORECASE)
             if hits:
-                hits = [hit for hit in hits if hit != ""]
+                hits = set(map(str.lower, itertools.chain(*hits)))
                 result[name] = (
-                    list(set(map(str.lower, itertools.chain(*hits)))),
+                    [hit for hit in hits if hit != ""],
                     pattern,
                     data["alternatives"] if "alternatives" in data else None,
                 )
@@ -1686,7 +1720,10 @@ def check_refs(
                     tag,
                     name,
                 )
-                if kind == "normative":
+                if kind == "normative" and status.lower() not in [
+                    "informational",
+                    "experimental",
+                ]:
                     result["comment"].append(
                         wrap_para(
                             f"Possible DOWNREF from this {status} doc "
@@ -1711,7 +1748,7 @@ def check_refs(
             latest = ref_meta and get_latest(
                 ref_meta["rev_history"], "published"
             )
-            if latest["rev"] and rev and latest["rev"] > rev:
+            if latest and latest["rev"] and rev and latest["rev"] > rev:
                 if latest["rev"].startswith("rfc"):
                     result["nit"].append(
                         wrap_para(
@@ -1757,7 +1794,13 @@ def check_refs(
                             msg += (
                                 f"{display_name} of unknown standards level."
                             )
-                        result["discuss"].append(wrap_para(msg, width=width))
+                        msg += (
+                            " (For IESG discussion. "
+                            "It seems this DOWNREF was not mentioned in "
+                            "the Last Call and also seems to not appear "
+                            "in the DOWNREF registry.)"
+                        )
+                        result["comment"].append(wrap_para(msg, width=width))
 
             obsoleted_by = fetch_dt(
                 datatracker,
@@ -1766,8 +1809,8 @@ def check_refs(
             )
             if obsoleted_by:
                 ob_bys = []
-                for o in obsoleted_by:
-                    obs_by = fetch_dt(datatracker, o["source"])
+                for obs in obsoleted_by:
+                    obs_by = fetch_dt(datatracker, obs["source"])
                     if "rfc" in obs_by:
                         ob_bys.append(obs_by["rfc"])
 
@@ -1856,9 +1899,10 @@ def check_xml(doc: str) -> None:
 
     @return     List of issues found
     """
+    result = {"discuss": [], "comment": [], "nit": []}
     snippets = re.finditer(r"^(.*)<\?xml\s", doc, flags=re.MULTILINE)
     for snip in snippets:
-        start = re.search(r"<\s*(\w+)", doc[snip.start() :])
+        start = re.search(r"<\s*([\w:]+)", doc[snip.start() :])
         if not start:
             log.warning("cannot find an XML start tag")
             continue
@@ -1878,8 +1922,16 @@ def check_xml(doc: str) -> None:
                 r"^" + re.escape(prefix), r"", text, flags=re.MULTILINE
             )
 
-        # TODO: reflect XML error in review (once there is a test case)
-        xml.etree.ElementTree.fromstring(text)
+        try:
+            xml.etree.ElementTree.fromstring(text)
+        except xml.etree.ElementTree.ParseError as err:
+            text = text.splitlines(keepends=True)
+            print(text[err.position[0] - 2])
+            result["nit"].append(
+                f'XML issue: "{err}":\n> {text[err.position[0] - 2]}\n'
+            )
+
+    return result
 
 
 def check_grammar(
@@ -1915,8 +1967,6 @@ def check_grammar(
             "DATE_FUTURE_VERB_PAST",
             "DATE_NEW_YEAR",
             "EN_QUOTES",
-            "EN_REPEATEDWORDS_NEED",
-            "EN_REPEATEDWORDS_OFTEN",
             "EN_UNPAIRED_BRACKETS",
             "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
             "HYPOTHESIS_TYPOGRAPHY",
@@ -1927,6 +1977,7 @@ def check_grammar(
             "LARGE_NUMBER_OF",
             "MORFOLOGIK_RULE_EN_US",
             "MULTIPLICATION_SIGN",
+            "NUMBERS_IN_WORDS",
             "PLUS_MINUS",
             "PUNCTUATION_PARAGRAPH_END",
             "RETURN_IN_THE",
@@ -1934,6 +1985,7 @@ def check_grammar(
             "SO_AS_TO",
             "SOME_OF_THE",
             "UNIT_SPACE",
+            "UNLIKELY_OPENING_PUNCTUATION",
             "UPPERCASE_SENTENCE_START",
             "WHITESPACE_RULE",
             "WORD_CONTAINS_UNDERSCORE",
@@ -1942,6 +1994,9 @@ def check_grammar(
             not grammar_skip_rules
             or i.ruleId not in grammar_skip_rules.split(",")
         )
+    ]
+    issues = [
+        i for i in issues if not i.ruleId.startswith("EN_REPEATEDWORDS_")
     ]
 
     para_sec = None
@@ -2083,10 +2138,11 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
             )
 
     consensus = meta["consensus"] if "consensus" in meta else None
-    if not consensus:
+    if consensus is None:
         result["comment"].append(
             wrap_para(
-                "There does not seem to be consensus for this document.",
+                "The datatracker state does not indicate whether the "
+                "consensus boilerplate should be included in this document.",
                 width=width,
             )
         )
@@ -2166,7 +2222,7 @@ def check_tlp(text: str, status: str, width: int) -> dict:
         result["discuss"].append(wrap_para(msg, width=width))
 
     if re.search(r"Simplified\s+BSD\s+License", text, flags=re.IGNORECASE):
-        result["comment"].append(
+        result["nit"].append(
             wrap_para(
                 'Document still refers to the "Simplified BSD License", which '
                 "was corrected in the TLP on September 21, 2021. It should "
@@ -2289,7 +2345,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             sotm = re.sub(pat, r"", sotm)
         elif required:
             idg_issues = True
-    if idg_issues:
+    if idg_issues and not re.search(COPYRIGHT_ALT_STREAMS, sotm):
         result["comment"].append(
             wrap_para(
                 "I-D Guidelines boilerplate text seems to have issues.",
@@ -2346,7 +2402,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
         )
 
     if sotm:
-        result["comment"].append(
+        result["nit"].append(
             wrap_para(
                 f'Found stray text in boilerplate: "{sotm.strip()}"',
                 width=width,
@@ -2379,6 +2435,12 @@ def review_extend(review: dict, extension: dict) -> dict:
 
 @click.command("review", help="Extract review from named items.")
 @click.argument("items", nargs=-1)
+@click.option(
+    "--check-ips/--no-check-ips",
+    "chk_ips",
+    default=None,
+    help="Check IP address ranges.",
+)
 @click.option(
     "--check-urls/--no-check-urls",
     "chk_urls",
@@ -2445,6 +2507,7 @@ def review_items(
     state: object,
     items: list,
     chk_urls: bool,
+    chk_ips: bool,
     chk_refs: bool,
     chk_grammar: bool,
     chk_meta: bool,
@@ -2465,6 +2528,7 @@ def review_items(
     @return     -
     """
 
+    chk_ips = state.default if chk_ips is None else chk_ips
     chk_urls = state.default if chk_urls is None else chk_urls
     chk_refs = state.default if chk_refs is None else chk_refs
     chk_grammar = state.default if chk_grammar is None else chk_grammar
@@ -2560,7 +2624,9 @@ def review_items(
                     check_meta(state.datatracker, orig, meta, state.width),
                 )
 
-            check_xml(orig)
+            # check_xml(orig)
+            review_extend(review, check_xml("".join(rev)))
+
             verbose = state.verbose > 0
             if chk_grammar:
                 review_extend(
@@ -2658,6 +2724,73 @@ def review_items(
                 state.datatracker,
                 "doc/reviewassignmentdocevent/?doc__name=" + name,
             )
+
+            if chk_ips:
+                result = []
+                faulty = []
+                for ip_literal in extract_ips(orig):
+                    if "/" in ip_literal:
+                        try:
+                            result.append(ipaddress.ip_network(ip_literal))
+                        except ValueError:
+                            faulty.append(str(ip_literal))
+                    else:
+                        try:
+                            result.append(ipaddress.ip_address(ip_literal))
+                        except ValueError:
+                            faulty.append(str(ip_literal))
+
+                if faulty:
+                    msg = "Unparsable possible IP "
+                    if len(faulty) > 1:
+                        msg += "blocks or addresses: "
+                    else:
+                        msg += "block or address: "
+                    msg += word_join(faulty, prefix='"', suffix='"') + "."
+                    review["nit"].append(wrap_para(msg))
+
+                faulty = []
+                for ip_obj in result:
+                    if isinstance(ip_obj) is ipaddress.IPv4Address and (
+                        ip_obj in TEST_NET_1
+                        or ip_obj in TEST_NET_2
+                        or ip_obj in TEST_NET_3
+                        or ip_obj in MCAST_TEST_NET
+                    ):
+                        continue
+
+                    if (
+                        isinstance(ip_obj) is ipaddress.IPv6Address
+                        and ip_obj in TEST_NET_V6
+                    ):
+                        continue
+
+                    if isinstance(ip_obj) is ipaddress.IPv4Network and (
+                        ip_obj.subnet_of(TEST_NET_1)
+                        or ip_obj.subnet_of(TEST_NET_2)
+                        or ip_obj.subnet_of(TEST_NET_3)
+                        or ip_obj.subnet_of(MCAST_TEST_NET)
+                    ):
+                        continue
+
+                    if isinstance(
+                        ip_obj
+                    ) is ipaddress.IPv6Network and ip_obj.subnet_of(
+                        TEST_NET_V6
+                    ):
+                        continue
+
+                    faulty.append(str(ip_obj))
+
+                if faulty:
+                    msg = "Found IP "
+                    if len(faulty) > 1:
+                        msg += "blocks or addresses"
+                    else:
+                        msg += "block or address"
+                    msg += " not inside RFC5737/RFC3849 example ranges: "
+                    msg += word_join(faulty, prefix='"', suffix='"') + "."
+                    review["nit"].append(wrap_para(msg))
 
             if art_reviews:
                 for rev_assignment in art_reviews:

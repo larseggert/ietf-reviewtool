@@ -1,7 +1,7 @@
 """
 Tests for ietf-reviewtool.py.
 
-Copyright (C) 2021  Lars Eggert
+Copyright (C) 2021-2022  Lars Eggert
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
