@@ -525,12 +525,12 @@ def extract_ips(text: str) -> set:
     # find all IPs
     return set(
         re.findall(
-            r"""
-             (?:[\da-f]+:[\da-f]+(?::[\da-f]*)+)(?:/[\d]+)?|
+            r"""\b(?:
+             (?:[\da-f]{1,4}(?::[\da-f]{0,4})+)(?:/[\d]+)?|
              (?:(?:\d{1,3}\.){3}\d{1,3}(?:/[\d\.]+)?)|
              (?:(?:\d{1,3}\.){0,3}\d{1,3}/[\d\.]+)
-             """,
-            "\n".join(text),
+             )\b""",
+            text,
             flags=re.IGNORECASE | re.VERBOSE,
         )
     )
@@ -2751,7 +2751,7 @@ def review_items(
 
                 faulty = []
                 for ip_obj in result:
-                    if isinstance(ip_obj) is ipaddress.IPv4Address and (
+                    if isinstance(ip_obj, ipaddress.IPv4Address) and (
                         ip_obj in TEST_NET_1
                         or ip_obj in TEST_NET_2
                         or ip_obj in TEST_NET_3
@@ -2760,12 +2760,12 @@ def review_items(
                         continue
 
                     if (
-                        isinstance(ip_obj) is ipaddress.IPv6Address
+                        isinstance(ip_obj, ipaddress.IPv6Address)
                         and ip_obj in TEST_NET_V6
                     ):
                         continue
 
-                    if isinstance(ip_obj) is ipaddress.IPv4Network and (
+                    if isinstance(ip_obj, ipaddress.IPv4Network) and (
                         ip_obj.subnet_of(TEST_NET_1)
                         or ip_obj.subnet_of(TEST_NET_2)
                         or ip_obj.subnet_of(TEST_NET_3)
@@ -2774,10 +2774,8 @@ def review_items(
                         continue
 
                     if isinstance(
-                        ip_obj
-                    ) is ipaddress.IPv6Network and ip_obj.subnet_of(
-                        TEST_NET_V6
-                    ):
+                        ip_obj, ipaddress.IPv6Network
+                    ) and ip_obj.subnet_of(TEST_NET_V6):
                         continue
 
                     faulty.append(str(ip_obj))
@@ -2790,7 +2788,7 @@ def review_items(
                         msg += "block or address"
                     msg += " not inside RFC5737/RFC3849 example ranges: "
                     msg += word_join(faulty, prefix='"', suffix='"') + "."
-                    review["nit"].append(wrap_para(msg))
+                    review["comment"].append(wrap_para(msg))
 
             if art_reviews:
                 for rev_assignment in art_reviews:
