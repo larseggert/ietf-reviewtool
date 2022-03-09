@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ietf-reviewtool"
-version = "0.1.4"
+version = "0.2.0"
 description = "Review tool for IETF documents"
 authors = ["Lars Eggert <lars@eggert.org>"]
 readme = "README.md"
@@ -17,6 +17,7 @@ language-tool-python = "^2.5.3"
 PyYAML = "^5.4.1"
 charset-normalizer = "^2.0.6"
 urlextract = "^1.5.0"
+num2words = "^0.5.10"
 
 [tool.poetry.dev-dependencies]
 

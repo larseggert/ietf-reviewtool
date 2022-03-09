@@ -29,6 +29,7 @@ import itertools
 import json
 import logging
 import math
+import num2words
 import os
 import re
 import sys
@@ -1583,20 +1584,27 @@ def check_inclusivity(text: str, width: int, verbose: bool = False) -> dict:
     return review
 
 
-def fetch_rfcs_in_lc(name: str) -> list:
+def fetch_docs_in_last_call_text(name: str) -> list:
     """
-    Fetches a RFC numbers mentioned in the last-call message. The *assumption*
+    Fetches IDs and RFCs mentioned in the last-call message. The *assumption*
     is that they are all called-out downrefs.
 
-    @param      name         The name of this document.
+    @param      name  The name of this document.
 
     @return     The RFC numbers mention in the last-call email.
     """
     last_call = read("last_call_text/" + name)
     if not last_call:
         return []
-    rfcs = set(re.findall(r"rfc\s*(\d+)", last_call, flags=re.IGNORECASE))
-    return [f"rfc{n}" for n in rfcs]
+    docs = re.findall(
+        r"rfc\s*\d+|draft-[-a-z\d_]+",
+        last_call,
+        flags=re.IGNORECASE,
+    )
+
+    docs = [re.sub(r"\s+", "", n.lower()) for n in docs]
+    docs = [re.sub(r"-\d+$", "", n) for n in docs]
+    return set(docs)
 
 
 def check_refs(
@@ -1625,8 +1633,8 @@ def check_refs(
     """
     result = {"discuss": [], "comment": [], "nit": []}
     downrefs_in_registry = fetch_downrefs(datatracker)
-    rfcs_in_lc = (
-        fetch_rfcs_in_lc(meta["name"] + "-" + meta["rev"] + ".txt")
+    docs_in_lc = (
+        fetch_docs_in_last_call_text(meta["name"] + "-" + meta["rev"] + ".txt")
         if meta
         else []
     )
@@ -1776,7 +1784,7 @@ def check_refs(
                 if (
                     is_downref(level, kind, ref_level)
                     and name not in downrefs_in_registry
-                    and name not in rfcs_in_lc
+                    and name not in docs_in_lc
                 ):
                     if ref_level is None:
                         result["comment"].append(
@@ -2108,7 +2116,8 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int) -> dict:
     if num_authors > 5:
         result["comment"].append(
             wrap_para(
-                f"The document has {num_authors} authors, which exceeds the "
+                f"The document has {num2words.num2words(num_authors)} "
+                "authors, which exceeds the "
                 "recommended author limit. I assume the sponsoring AD has "
                 "agreed that this is appropriate?",
                 width=width,
