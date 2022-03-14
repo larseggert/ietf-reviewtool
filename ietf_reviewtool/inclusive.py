@@ -7,7 +7,9 @@ from .util.fetch import fetch_url
 from .util.text import bulletize, word_join, wrap_para
 
 
-def check_inclusivity(text: str, width: int, log: logging.Logger, verbose: bool = False) -> dict:
+def check_inclusivity(
+    text: str, width: int, log: logging.Logger, verbose: bool = False
+) -> dict:
     """
     Check document terminology for potential inclusivity issues.
 

@@ -57,9 +57,7 @@ def fmt_comment(item: dict, para_sec: list, width: int) -> list:
     if item["ctx"]:
         result.append("\n")
     txt = "".join([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
-    result.append(
-        wrap_para(txt, width=width, end="\n\n" if item["txt"] else "")
-    )
+    result.append(wrap_para(txt, width=width, end="\n\n" if item["txt"] else ""))
     if item["ctx"]:
         para_sec[0] -= 1  # don't count this as a paragraph
     item.clear()

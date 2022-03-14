@@ -7,7 +7,10 @@ from .util.fetch import fetch_meta
 from .util.patterns import SECTION_PATTERN
 from .util.text import wrap_para, unfold, word_join, get_status, get_relationships
 
-def check_meta(datatracker: str, text: str, meta: dict, width: int, log: logging.Logger) -> dict:
+
+def check_meta(
+    datatracker: str, text: str, meta: dict, width: int, log: logging.Logger
+) -> dict:
     """
     Check document metadata for issues.
 
@@ -64,9 +67,7 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int, log: logging
                     width=width,
                 )
             )
-        elif re.match(
-            r".*Review\s+Needed", iana_review_state, flags=re.IGNORECASE
-        ):
+        elif re.match(r".*Review\s+Needed", iana_review_state, flags=re.IGNORECASE):
             result["comment"].append(
                 wrap_para(
                     "The IANA review of this document seems to not have "
@@ -116,15 +117,12 @@ def check_meta(datatracker: str, text: str, meta: dict, width: int, log: logging
         for doc in docs:
             meta = fetch_meta(datatracker, "rfc" + doc, log)
             level = (
-                meta["std_level"] or meta["intended_std_level"]
-                if meta
-                else "Unknown"
+                meta["std_level"] or meta["intended_std_level"] if meta else "Unknown"
             )
             if not relationship_ok(status, level):
                 result["discuss"].append(
                     wrap_para(
-                        f"This {status} document {rel} RFC{doc}, "
-                        f"which is {level}.",
+                        f"This {status} document {rel} RFC{doc}, " f"which is {level}.",
                         width=width,
                     )
                 )

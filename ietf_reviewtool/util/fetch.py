@@ -25,7 +25,9 @@ def fetch_init_cache(log):
     )
 
 
-def fetch_url(url: str, log: logging.Logger, use_cache: bool = True, method: str = "GET") -> str:
+def fetch_url(
+    url: str, log: logging.Logger, use_cache: bool = True, method: str = "GET"
+) -> str:
     """
     Fetches the resource at the given URL or checks its reachability (when
     method is "HEAD".) A failing HEAD request is retried as a GET, since some

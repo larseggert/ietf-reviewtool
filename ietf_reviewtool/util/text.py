@@ -411,7 +411,6 @@ def basename(item: str) -> str:
     return re.sub(r"^(?:.*/)?(.*[^-]+)(-\d+)+(?:\.txt)?$", r"\1", item)
 
 
-
 def section_and_paragraph(
     nxt: str, cur: str, para_sec: list, is_diff: bool = True
 ) -> list:
@@ -426,9 +425,7 @@ def section_and_paragraph(
 
     @return     An updated (paragraph number, section name) list.
     """
-    [para, sec, had_nn] = (
-        para_sec if para_sec is not None else [1, None, False]
-    )
+    [para, sec, had_nn] = para_sec if para_sec is not None else [1, None, False]
 
     # track paragraphs
     pat = {True: r"^[\- ] +$", False: r"^\s*$"}
