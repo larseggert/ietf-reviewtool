@@ -21,7 +21,9 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
+import base64
 import difflib
+import gzip
 import html
 import ipaddress
 import json
@@ -171,15 +173,44 @@ def extract_urls_from_items(
     default=True,
     help="Fetch various write-ups related to the item.",
 )
+@click.option(
+    "--fetch-xml/--no-fetch-xml",
+    "fetch_xml",
+    default=True,
+    help="Fetch XML source of item, if available.",
+)
+@click.option(
+    "--extract-markdown/--no-extract-markdown",
+    "extract_markdown",
+    default=True,
+    help="Extract Markdown source from XML source, if possible.",
+)
 @click.pass_obj
 def fetch(
-    state: object, items: list, strip: bool, fetch_writeups: bool
+    state: object,
+    items: list,
+    strip: bool,
+    fetch_writeups: bool,
+    fetch_xml: bool,
+    extract_markdown: bool,
 ) -> None:
-    get_items(items, state.datatracker, strip, fetch_writeups)
+    get_items(
+        items,
+        state.datatracker,
+        strip,
+        fetch_writeups,
+        fetch_xml,
+        extract_markdown,
+    )
 
 
 def get_items(
-    items: list, datatracker: str, strip: bool = True, get_writeup=False
+    items: list,
+    datatracker: str,
+    strip: bool = True,
+    get_writeup=False,
+    get_xml=True,
+    extract_md=True,
 ) -> list:
     """
     Download named items into files of the same name in the current directory.
@@ -190,6 +221,8 @@ def get_items(
     @param      datatracker  The datatracker URL to use
     @param      strip        Whether to run strip() on the downloaded item
     @param      get_writeup  Whether to download associated write-ups
+    @param      get_xml      Whether to download XML sources
+    @param      extract_md   Whether to extract Markdown from XML sources
 
     @return     List of file names written or existing
     """
@@ -197,11 +230,19 @@ def get_items(
     for item in items:
         do_strip = strip
         file_name = item
-        if not file_name.endswith(".txt"):
+        if not file_name.endswith(".txt") and not file_name.endswith(".xml"):
             file_name += ".txt"
 
         if get_writeup:
             get_writeups(datatracker, item, log)
+
+        if (
+            get_xml
+            and item.startswith("draft-")
+            and file_name.endswith(".txt")
+        ):
+            # also try and get XML source
+            items.append(re.sub(r"\.txt$", ".xml", file_name))
 
         if os.path.isfile(file_name):
             log.warning("%s exists, skipping", file_name)
@@ -268,7 +309,21 @@ def get_items(
             text = fetch_url(url, log)
 
         if text is not None:
-            if do_strip:
+            if file_name.endswith(".xml") and extract_md:
+                # try and extract markdown
+                mkd = re.search(
+                    r"<!--\s*##markdown-source:(.*)-->",
+                    text,
+                    flags=re.DOTALL,
+                )
+                if mkd:
+                    log.debug("Extracting Markdown source of %s", file_name)
+                    mkd_file = re.sub(r"\.xml$", ".md", file_name)
+                    with open(mkd_file, "wb") as file:
+                        file.write(gzip.decompress(base64.b64decode(mkd[1])))
+                    result.append(mkd_file)
+
+            elif do_strip:
                 log.debug("Stripping %s", item)
                 text = strip_pagination(text)
             write(text, file_name)
@@ -1044,8 +1099,28 @@ def review_items(
     default=True,
     help="Fetch various write-ups related to the item.",
 )
+@click.option(
+    "--fetch-xml/--no-fetch-xml",
+    "fetch_xml",
+    default=True,
+    help="Fetch XML source of item, if available.",
+)
+@click.option(
+    "--extract-markdown/--no-extract-markdown",
+    "extract_markdown",
+    default=True,
+    help="Extract Markdown source from XML source, if possible.",
+)
 @click.pass_obj
-def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
+def fetch_agenda(
+    state: object,
+    mkdir,
+    save_agenda,
+    strip,
+    fetch_writeups,
+    fetch_xml,
+    extract_markdown,
+):
     agenda = get_current_agenda(state.datatracker, log)
     if "telechat-date" not in agenda:
         return
@@ -1077,7 +1152,14 @@ def fetch_agenda(state: object, mkdir, save_agenda, strip, fetch_writeups):
         agenda["telechat-date"],
     )
 
-    gotten = get_items(items, state.datatracker, strip, fetch_writeups)
+    gotten = get_items(
+        items,
+        state.datatracker,
+        strip,
+        fetch_writeups,
+        fetch_xml,
+        extract_markdown,
+    )
     if gotten:
         extra = current_items - set(gotten)
         if extra:
