@@ -12,7 +12,9 @@ def get_current_agenda(datatracker: str, log: logging.Logger) -> dict:
 
     @return     The current agenda as a dict.
     """
-    agenda = fetch_url(datatracker + "/iesg/agenda/agenda.json", log, use_cache=False)
+    agenda = fetch_url(
+        datatracker + "/iesg/agenda/agenda.json", log, use_cache=False
+    )
     if agenda is None:
         return {}
     return json.loads(agenda)
@@ -34,6 +36,7 @@ def get_items_on_agenda(agenda: dict) -> list:
                 if doc_type in sec:
                     for doc in sec[doc_type]:
                         items.append(
-                            doc["docname"] + ("-" + doc["rev"] if "rev" in doc else "")
+                            doc["docname"]
+                            + ("-" + doc["rev"] if "rev" in doc else "")
                         )
     return items

@@ -63,9 +63,14 @@ def check_grammar(
             "WHITESPACE_RULE",
             "WORD_CONTAINS_UNDERSCORE",
         ]
-        and (not grammar_skip_rules or i.ruleId not in grammar_skip_rules.split(","))
+        and (
+            not grammar_skip_rules
+            or i.ruleId not in grammar_skip_rules.split(",")
+        )
     ]
-    issues = [i for i in issues if not i.ruleId.startswith("EN_REPEATEDWORDS_")]
+    issues = [
+        i for i in issues if not i.ruleId.startswith("EN_REPEATEDWORDS_")
+    ]
 
     para_sec = None
     cur = 0
@@ -94,7 +99,9 @@ def check_grammar(
             offset -= cut
 
         result["nit"].append("> " + context + "\n")
-        result["nit"].append("> " + " " * offset + "^" * issue.errorLength + "\n")
+        result["nit"].append(
+            "> " + " " * offset + "^" * issue.errorLength + "\n"
+        )
 
         message = (
             issue.message.replace("“", '"')

@@ -90,7 +90,10 @@ def extract_ips(text: str) -> set:
 
 
 def extract_urls(
-    text: str, log: logging.Logger, examples: bool = False, common: bool = False
+    text: str,
+    log: logging.Logger,
+    examples: bool = False,
+    common: bool = False,
 ) -> set:
     """
     Return a list of URLs in a text string.
@@ -425,7 +428,9 @@ def section_and_paragraph(
 
     @return     An updated (paragraph number, section name) list.
     """
-    [para, sec, had_nn] = para_sec if para_sec is not None else [1, None, False]
+    [para, sec, had_nn] = (
+        para_sec if para_sec is not None else [1, None, False]
+    )
 
     # track paragraphs
     pat = {True: r"^[\- ] +$", False: r"^\s*$"}
