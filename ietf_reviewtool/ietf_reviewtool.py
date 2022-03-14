@@ -40,7 +40,13 @@ from .inclusive import check_inclusivity
 from .metadata import check_meta
 from .references import check_refs
 
-from .util.fetch import fetch_url, fetch_dt, fetch_meta, fetch_init_cache, get_writeups
+from .util.fetch import (
+    fetch_url,
+    fetch_dt,
+    fetch_meta,
+    fetch_init_cache,
+    get_writeups,
+)
 from .util.format import fmt_nit, fmt_comment, fmt_review
 from .util.text import (
     word_join,
@@ -79,7 +85,9 @@ class State:
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
 
 
-@click.group(help="Review tool for IETF documents.", context_settings=CONTEXT_SETTINGS)
+@click.group(
+    help="Review tool for IETF documents.", context_settings=CONTEXT_SETTINGS
+)
 @click.option(
     "--default-enable/--no-default-enable",
     "default",
@@ -106,7 +114,9 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
     help="Wrap the review to this character width.",
 )
 @click.pass_context
-def cli(ctx: object, datatracker: str, verbose: int, default: bool, width: int) -> None:
+def cli(
+    ctx: object, datatracker: str, verbose: int, default: bool, width: int
+) -> None:
     datatracker = re.sub(r"/+$", "", datatracker)
     ctx.obj = State(datatracker, verbose, default, width)
     log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
@@ -162,7 +172,9 @@ def extract_urls_from_items(
     help="Fetch various write-ups related to the item.",
 )
 @click.pass_obj
-def fetch(state: object, items: list, strip: bool, fetch_writeups: bool) -> None:
+def fetch(
+    state: object, items: list, strip: bool, fetch_writeups: bool
+) -> None:
     get_items(items, state.datatracker, strip, fetch_writeups)
 
 
@@ -224,7 +236,8 @@ def get_items(
             slug = "conflrev" if which == "conflict-review" else "statchg"
             target = fetch_dt(
                 datatracker,
-                f"doc/relateddocument/?relationship__slug={slug}&target__name=" + doc,
+                f"doc/relateddocument/?relationship__slug={slug}&target__name="
+                + doc,
                 log,
             )
             if not target:
@@ -264,7 +277,9 @@ def get_items(
     return result
 
 
-@click.command("strip", help="Strip headers, footers and pagination from items.")
+@click.command(
+    "strip", help="Strip headers, footers and pagination from items."
+)
 @click.argument("items", nargs=-1)
 @click.option(
     "--in-place/--no-in-place",
@@ -513,7 +528,9 @@ def check_xml(doc: str) -> None:
         if snip.group(1):
             prefix = snip.group(1)
             # log.debug('XML prefix "%s"', prefix)
-            text = re.sub(r"^" + re.escape(prefix), r"", text, flags=re.MULTILINE)
+            text = re.sub(
+                r"^" + re.escape(prefix), r"", text, flags=re.MULTILINE
+            )
 
         try:
             xml.etree.ElementTree.fromstring(text)
@@ -681,7 +698,8 @@ def review_items(
             rev = read(item, log)
             if orig is None:
                 log.error(
-                    "No original for %s, cannot review, " "only performing checks",
+                    "No original for %s, cannot review, "
+                    "only performing checks",
                     item,
                 )
                 orig = rev
@@ -707,7 +725,9 @@ def review_items(
                     for line in diff:
                         if re.search(r"^- ", line):
                             entities.extend(
-                                re.findall(r"(&#?\w+;)", line, flags=re.IGNORECASE)
+                                re.findall(
+                                    r"(&#?\w+;)", line, flags=re.IGNORECASE
+                                )
                             )
 
                     if entities:
@@ -722,7 +742,9 @@ def review_items(
                         )
 
             if chk_boilerpl and not not_id:
-                review_extend(review, check_boilerplate(orig, status, state.width))
+                review_extend(
+                    review, check_boilerplate(orig, status, state.width)
+                )
 
             if chk_tlp:
                 review_extend(review, check_tlp(orig, status, state.width))
@@ -731,7 +753,9 @@ def review_items(
             if chk_meta and meta:
                 review_extend(
                     review,
-                    check_meta(state.datatracker, orig, meta, state.width, log),
+                    check_meta(
+                        state.datatracker, orig, meta, state.width, log
+                    ),
                 )
 
             # check_xml(orig)
@@ -741,7 +765,9 @@ def review_items(
             if chk_grammar:
                 review_extend(
                     review,
-                    check_grammar(rev, grammar_skip_rules, state.width, verbose),
+                    check_grammar(
+                        rev, grammar_skip_rules, state.width, verbose
+                    ),
                 )
 
             if chk_refs and not not_id:
@@ -765,7 +791,9 @@ def review_items(
                 urls = extract_urls(orig, log)
 
                 for url in urls:
-                    if re.search(r"://tools\.ietf\.org", url, flags=re.IGNORECASE):
+                    if re.search(
+                        r"://tools\.ietf\.org", url, flags=re.IGNORECASE
+                    ):
                         result.append(url)
 
                 if result:
@@ -789,7 +817,9 @@ def review_items(
                     review["nit"].extend(f" * {line}\n" for line in result)
                     review["nit"].append("\n")
 
-                reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
+                reachability = {
+                    u: fetch_url(u, log, verbose, "HEAD") for u in urls
+                }
                 result = []
                 for url in urls:
                     if reachability[url] is None:
@@ -808,7 +838,10 @@ def review_items(
                         continue
                     if reachability[url] is not None:
                         test_url = re.sub(r"^\w+:", r"https:", url)
-                        if fetch_url(test_url, log, verbose, "HEAD") is not None:
+                        if (
+                            fetch_url(test_url, log, verbose, "HEAD")
+                            is not None
+                        ):
                             result.append(url)
 
                 if result:
@@ -822,7 +855,9 @@ def review_items(
             if chk_inclusiv:
                 review_extend(
                     review,
-                    check_inclusivity(unfold("".join(rev)), state.width, verbose),
+                    check_inclusivity(
+                        unfold("".join(rev)), state.width, verbose
+                    ),
                 )
 
             art_reviews = fetch_dt(
@@ -879,9 +914,9 @@ def review_items(
                     ):
                         continue
 
-                    if isinstance(ip_obj, ipaddress.IPv6Network) and ip_obj.subnet_of(
-                        TEST_NET_V6
-                    ):
+                    if isinstance(
+                        ip_obj, ipaddress.IPv6Network
+                    ) and ip_obj.subnet_of(TEST_NET_V6):
                         continue
 
                     faulty.append(str(ip_obj))
@@ -902,20 +937,28 @@ def review_items(
                         continue
 
                     assignment = fetch_dt(
-                        state.datatracker, rev_assignment["review_assignment"], log
+                        state.datatracker,
+                        rev_assignment["review_assignment"],
+                        log,
                     )
 
                     if not assignment:
-                        log.warning("Could not fetch review_assignment for %s", name)
+                        log.warning(
+                            "Could not fetch review_assignment for %s", name
+                        )
                         continue
 
-                    reviewer = fetch_dt(state.datatracker, assignment["reviewer"], log)
+                    reviewer = fetch_dt(
+                        state.datatracker, assignment["reviewer"], log
+                    )
 
                     if not reviewer:
                         log.warning("Could not fetch reviewer for %s", name)
                         continue
 
-                    reviewer = fetch_dt(state.datatracker, reviewer["person"], log)
+                    reviewer = fetch_dt(
+                        state.datatracker, reviewer["person"], log
+                    )
 
                     if not reviewer:
                         log.warning("Could not fetch reviewer for %s", name)
@@ -933,13 +976,17 @@ def review_items(
                         log.debug("Review for %s was withdrawn", name)
                         continue
 
-                    art_review = fetch_dt(state.datatracker, assignment["review"], log)
+                    art_review = fetch_dt(
+                        state.datatracker, assignment["review"], log
+                    )
 
                     if not art_review:
                         log.warning("Could not fetch review for %s", name)
                         continue
 
-                    group = fetch_dt(state.datatracker, art_review["group"], log)
+                    group = fetch_dt(
+                        state.datatracker, art_review["group"], log
+                    )
 
                     if not group:
                         log.warning("Could not fetch ART for %s", name)
@@ -949,7 +996,10 @@ def review_items(
                         review["comment"].append(
                             wrap_para(
                                 "Thanks to "
-                                + (reviewer["name_from_draft"] or reviewer["name"])
+                                + (
+                                    reviewer["name_from_draft"]
+                                    or reviewer["name"]
+                                )
                                 + f" for their {group['name']} review "
                                 f"({art_review['external_url']})."
                             )

@@ -35,7 +35,9 @@ def check_refs(
     result = {"discuss": [], "comment": [], "nit": []}
     downrefs_in_registry = fetch_downrefs(datatracker, log)
     docs_in_lc = (
-        fetch_docs_in_last_call_text(meta["name"] + "-" + meta["rev"] + ".txt", log)
+        fetch_docs_in_last_call_text(
+            meta["name"] + "-" + meta["rev"] + ".txt", log
+        )
         if meta
         else []
     )
@@ -82,11 +84,17 @@ def check_refs(
         )
 
     if in_text - both:
-        ref_list = wrap_and_indent(word_join(list(in_text - both)), width=width)
-        result["comment"].append(f"No reference entries found for: {ref_list}.\n\n")
+        ref_list = wrap_and_indent(
+            word_join(list(in_text - both)), width=width
+        )
+        result["comment"].append(
+            f"No reference entries found for: {ref_list}.\n\n"
+        )
 
     if both - in_text:
-        ref_list = wrap_and_indent(word_join(list(both - in_text)), width=width)
+        ref_list = wrap_and_indent(
+            word_join(list(both - in_text)), width=width
+        )
         result["nit"].append(f"Uncited references: {ref_list}.\n\n")
 
     for rel, docs in rels.items():
@@ -107,7 +115,9 @@ def check_refs(
     level = meta and (meta["std_level"] or meta["intended_std_level"])
     if not level:
         # if we have no level from the metadata, see if the document has one
-        level = re.search(r"^Intended status: (.*)\s{2,}", text, flags=re.MULTILINE)
+        level = re.search(
+            r"^Intended status: (.*)\s{2,}", text, flags=re.MULTILINE
+        )
         level = level[1].rstrip() if level else "unknown"
 
     for kind in ["normative", "informative"]:
@@ -134,7 +144,9 @@ def check_refs(
                     )
                 continue
 
-            draft_components = re.search(r"^(draft-.*)-(\d{2,})$", name.group(0))
+            draft_components = re.search(
+                r"^(draft-.*)-(\d{2,})$", name.group(0)
+            )
             rev = None
             if draft_components:
                 name = draft_components.group(1)
@@ -144,7 +156,9 @@ def check_refs(
             ref_meta = fetch_meta(datatracker, basename(name), log)
             display_name = re.sub(r"rfc", r"RFC", name)
 
-            latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
+            latest = ref_meta and get_latest(
+                ref_meta["rev_history"], "published"
+            )
             if latest and latest["rev"] and rev and latest["rev"] > rev:
                 if latest["rev"].startswith("rfc"):
                     result["nit"].append(
@@ -166,7 +180,9 @@ def check_refs(
 
             if status.lower() not in ["informational", "experimental"]:
                 ref_level = (
-                    ref_meta["std_level"] or ref_meta["intended_std_level"] or "unknown"
+                    ref_meta["std_level"]
+                    or ref_meta["intended_std_level"]
+                    or "unknown"
                 )
                 if (
                     is_downref(level, kind, ref_level, log)
@@ -186,7 +202,9 @@ def check_refs(
                         if ref_level != "unknown":
                             msg += f"{ref_level} {display_name}."
                         else:
-                            msg += f"{display_name} of unknown standards level."
+                            msg += (
+                                f"{display_name} of unknown standards level."
+                            )
                         msg += (
                             " (For IESG discussion. "
                             "It seems this DOWNREF was not mentioned in "
@@ -197,7 +215,8 @@ def check_refs(
 
             obsoleted_by = fetch_dt(
                 datatracker,
-                "doc/relateddocument/?relationship__slug=obs&target__name=" + name,
+                "doc/relateddocument/?relationship__slug=obs&target__name="
+                + name,
                 log,
             )
             if obsoleted_by:
@@ -220,7 +239,9 @@ def check_refs(
     return result
 
 
-def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bool:
+def is_downref(
+    level: str, kind: str, ref_level: str, log: logging.Logger
+) -> bool:
     """
     Check if a document reference is allowed (i.e., is not a DOWNREF) for a
     document at a given standards level.
@@ -267,6 +288,8 @@ def fetch_downrefs(datatracker: str, log: logging.Logger) -> list:
     @return     A list of RFC names.
     """
     downrefs = fetch_dt(
-        datatracker, "doc/relateddocument/?relationship=downref-approval&limit=0", log
+        datatracker,
+        "doc/relateddocument/?relationship=downref-approval&limit=0",
+        log,
     )
     return [re.sub(r".*(rfc\d+).*", r"\1", d["target"]) for d in downrefs]
