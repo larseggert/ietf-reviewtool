@@ -1,0 +1,82 @@
+import datetime
+import logging
+import sys
+
+import charset_normalizer
+
+
+def die(msg: list, log: logging.Logger, err: int = 1) -> None:
+    """
+    Print a message and exit with an error code.
+
+    @param      msg   The message to print
+
+    @return
+    """
+    log.error(msg)
+    sys.exit(err)
+
+
+def read(file_name: str, log: logging.Logger) -> str:
+    """
+    Read a file into a string.
+
+    @param      file_name  The item to read
+
+    @return     The content of the item.
+    """
+    try:
+        with open(file_name, "rb") as file:
+            return str(charset_normalizer.from_bytes(file.read()).best())
+    except FileNotFoundError as err:
+        log.error("%s -> %s", file_name, err)
+        return None
+
+
+def write(text: str, file_name: str) -> None:
+    """
+    Write a string into a file.
+
+    @param      text       The text to write
+    @param      file_name  The file name to write to
+
+    @return     -
+    """
+    with open(file_name, "w") as file:
+        file.write(text)
+
+
+def duplicates(data: list) -> set:
+    """
+    Return duplicate elements in a list.
+
+    @param      data  The list to locate duplicates in
+
+    @return     Duplicate elements of data.
+    """
+    seen = {}
+    dupes = set()
+    for item in data:
+        if item not in seen:
+            seen[item] = 1
+        else:
+            if seen[item] == 1:
+                dupes.add(item)
+            seen[item] += 1
+    return dupes.discard(None)
+
+
+def get_latest(data: list, key: str) -> dict:
+    """
+    Gets the latest element, by timestamp in key, from data.
+
+    @param      data  The list to return the latest element of
+    @param      key   The timestamp key
+
+    @return     The latest element by timestamp in data.
+    """
+    data.sort(
+        key=lambda k: datetime.datetime.fromisoformat(k[key]),
+        reverse=True,
+    )
+    return data[0]
