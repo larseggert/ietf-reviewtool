@@ -42,7 +42,7 @@ def write(text: str, file_name: str) -> None:
 
     @return     -
     """
-    with open(file_name, "w") as file:
+    with open(file_name, "w", encoding="utf8") as file:
         file.write(text)
 
 
