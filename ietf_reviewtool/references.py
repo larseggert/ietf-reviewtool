@@ -3,8 +3,9 @@
 import logging
 import re
 
+from .review import IetfReview
 from .util.fetch import fetch_meta, fetch_docs_in_last_call_text, fetch_dt
-from .util.text import untag, word_join, wrap_para, wrap_and_indent, basename
+from .util.text import untag, word_join, wrap_and_indent, basename
 from .util.utils import duplicates, get_latest, die
 
 
@@ -12,29 +13,26 @@ def check_refs(
     datatracker: str,
     refs: dict,
     rels: dict,
-    width: int,
     name: str,
     status: str,
     meta: dict,
     text: str,
+    review: IetfReview,
     log: logging.Logger,
-) -> dict:
+) -> None:
     """
     Check the references.
 
     @param      datatracker  The datatracker URL to use
     @param      refs         The references to check
     @param      rels         The relationship of this document to others
-    @param      width        The width to wrap to
     @param      name         The name of this document.
     @param      status       The standards level of the given document
     @param      meta         The metadata
     @param      text         The document text
+    @param      review       The IETF review to comment upon
     @param      log          The log to write to
-
-    @return     List of messages.
     """
-    result = {"discuss": [], "comment": [], "nit": []}
     downrefs_in_registry = fetch_downrefs(datatracker, log)
     docs_in_lc = (
         fetch_docs_in_last_call_text(meta["name"] + "-" + meta["rev"] + ".txt", log)
@@ -52,21 +50,15 @@ def check_refs(
         tags, tgts = zip(*refs[kind])
         dupes = duplicates(tags)
         if dupes:
-            result["nit"].append(
-                wrap_para(
-                    f"Duplicate {kind} references: {word_join(dupes)}.",
-                    width=width,
-                )
+            review.nit(
+                f"Duplicate {kind} references: {word_join(dupes)}.",
             )
 
         dupes = duplicates(tgts)
         if dupes:
             tags = [t[0] for t in refs[kind] if t[1] in dupes]
-            result["nit"].append(
-                wrap_para(
-                    f"Duplicate {kind} references to: {word_join(dupes)}.",
-                    width=width,
-                )
+            review.nit(
+                f"Duplicate {kind} references to: {word_join(dupes)}.",
             )
 
     norm = set(e[0] for e in refs["normative"])
@@ -75,21 +67,18 @@ def check_refs(
     in_text = {"[" + r + "]" for r in {untag(r) for r in refs["text"]}}
 
     if norm & info:
-        result["nit"].append(
-            wrap_para(
-                "Reference entries duplicated in both normative and "
-                f"informative sections: {word_join(list(norm & info))}.",
-                width=width,
-            )
+        review.nit(
+            "Reference entries duplicated in both normative and "
+            f"informative sections: {word_join(list(norm & info))}.",
         )
 
     if in_text - both:
-        ref_list = wrap_and_indent(word_join(list(in_text - both)), width=width)
-        result["comment"].append(f"No reference entries found for: {ref_list}.\n\n")
+        ref_list = wrap_and_indent(word_join(list(in_text - both)), width=review.width)
+        review.comment(f"No reference entries found for: {ref_list}.")
 
     if both - in_text:
-        ref_list = wrap_and_indent(word_join(list(both - in_text)), width=width)
-        result["nit"].append(f"Uncited references: {ref_list}.\n\n")
+        ref_list = wrap_and_indent(word_join(list(both - in_text)), width=review.width)
+        review.nit(f"Uncited references: {ref_list}.")
 
     for rel, docs in rels.items():
         for doc in docs:
@@ -98,12 +87,9 @@ def check_refs(
             in_informative = ref in [x[1] for x in refs["informative"]]
 
             if not in_normative and not in_informative:
-                result["comment"].append(
-                    wrap_para(
-                        f"Document {rel} RFC{doc}, but does not cite it as a "
-                        f"reference.",
-                        width=width,
-                    )
+                review.comment(
+                    f"Document {rel} RFC{doc}, but does not cite it as a "
+                    f"reference.",
                 )
 
     level = meta and (meta["std_level"] or meta["intended_std_level"])
@@ -127,12 +113,9 @@ def check_refs(
                     "informational",
                     "experimental",
                 ]:
-                    result["comment"].append(
-                        wrap_para(
-                            f"Possible DOWNREF from this {status} doc "
-                            f"to {tag}. If so, the IESG needs to approve it.",
-                            width=width,
-                        )
+                    review.comment(
+                        f"Possible DOWNREF from this {status} doc "
+                        f"to {tag}. If so, the IESG needs to approve it.",
                     )
                 continue
 
@@ -149,21 +132,15 @@ def check_refs(
             latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
             if latest and latest["rev"] and rev and latest["rev"] > rev:
                 if latest["rev"].startswith("rfc"):
-                    result["nit"].append(
-                        wrap_para(
-                            f"Document references {display_name}, but that "
-                            f"has been published as {latest['rev'].upper()}.",
-                            width=width,
-                        )
+                    review.nit(
+                        f"Document references {display_name}, but that "
+                        f"has been published as {latest['rev'].upper()}.",
                     )
                 else:
-                    result["nit"].append(
-                        wrap_para(
-                            f"Document references {name}-{rev}, but "
-                            f"-{latest['rev']} is the latest "
-                            f"available revision.",
-                            width=width,
-                        )
+                    review.nit(
+                        f"Document references {name}-{rev}, but "
+                        f"-{latest['rev']} is the latest "
+                        f"available revision.",
                     )
 
             if status.lower() not in ["informational", "experimental"]:
@@ -176,12 +153,9 @@ def check_refs(
                     and name not in docs_in_lc
                 ):
                     if ref_level is None:
-                        result["comment"].append(
-                            wrap_para(
-                                f"Possible DOWNREF {tag} from this {level} "
-                                f"to {display_name}.",
-                                width=width,
-                            )
+                        review.comment(
+                            f"Possible DOWNREF {tag} from this {level} "
+                            f"to {display_name}.",
                         )
                     else:
                         msg = f"DOWNREF {tag} from this {level} to "
@@ -195,7 +169,7 @@ def check_refs(
                             "the Last Call and also seems to not appear "
                             "in the DOWNREF registry.)"
                         )
-                        result["comment"].append(wrap_para(msg, width=width))
+                        review.comment(msg)
 
             obsoleted_by = fetch_dt(
                 datatracker,
@@ -210,16 +184,11 @@ def check_refs(
                         ob_bys.append(obs_by["rfc"])
 
                 ob_rfcs = word_join(ob_bys, prefix="RFC")
-                result["nit"].append(
-                    wrap_para(
-                        f"Reference {tag} to {display_name}, "
-                        f"which was obsoleted by {ob_rfcs} "
-                        f"(this may be on purpose).",
-                        width=width,
-                    )
+                review.nit(
+                    f"Reference {tag} to {display_name}, "
+                    f"which was obsoleted by {ob_rfcs} "
+                    f"(this may be on purpose).",
                 )
-
-    return result
 
 
 def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bool:

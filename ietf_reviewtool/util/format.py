@@ -2,8 +2,6 @@
 
 import re
 
-from .text import wrap_para
-
 
 def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
     """
@@ -21,7 +19,7 @@ def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
     return line
 
 
-def fmt_nit(changed: list, indicator: list, para_sec: list) -> list:
+def fmt_nit(changed: list, indicator: list, para_sec: list) -> str:
     """
     Format a nit.
 
@@ -41,16 +39,15 @@ def fmt_nit(changed: list, indicator: list, para_sec: list) -> list:
         indicator[prefix].clear()
         changed[prefix].clear()
     result.append("\n")
-    return result
+    return "\n".join(result)
 
 
-def fmt_comment(item: dict, para_sec: list, width: int) -> list:
+def fmt_comment(item: dict, para_sec: list) -> str:
     """
     Format a comment.
 
     @param      item      The comment item dict
     @param      para_sec  The current (paragraph number, section name) list
-    @param      width     The width to wrap to
 
     @return     The formatted comment.
     """
@@ -59,52 +56,9 @@ def fmt_comment(item: dict, para_sec: list, width: int) -> list:
     if item["ctx"]:
         result.append("\n")
     txt = "".join([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
-    result.append(wrap_para(txt, width=width, end="\n\n" if item["txt"] else ""))
+
+    result.append(txt)
     if item["ctx"]:
         para_sec[0] -= 1  # don't count this as a paragraph
     item.clear()
-    return result
-
-
-def fmt_review(review: dict, width: int) -> None:
-    """
-    Format a review dict for datatracker submission.
-
-    @param      review  The review to format
-    @param      width   The column number to wrap the review to
-
-    @return     Wrapped text version of the review.
-    """
-    boilerplate = {
-        "discuss": None,
-        "comment": None,
-        "nit": (
-            "All comments below are about very minor potential issues "
-            "that you may choose to address in some way - or ignore - "
-            "as you see fit. Some were flagged by automated tools (via "
-            "https://github.com/larseggert/ietf-reviewtool), so there "
-            "will likely be some false positives. "
-            "There is no need to let me know what you did "
-            "with these suggestions."
-        ),
-    }
-
-    used_categories = 0
-    for category in boilerplate:
-        if review[category]:
-            used_categories += 1
-
-    for category, content in boilerplate.items():
-        if not review[category]:
-            continue
-
-        if used_categories > 1:
-            print("-" * width)
-            print(category.upper())
-            print("-" * width)
-
-        if content:
-            print(wrap_para(content, width=width, end="\n"))
-
-        for line in review[category]:
-            print(line, end="")
+    return "\n".join(result)

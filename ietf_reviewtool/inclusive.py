@@ -5,22 +5,20 @@ import logging
 import re
 import yaml
 
+from .review import IetfReview
 from .util.fetch import fetch_url
-from .util.text import bulletize, word_join, wrap_para
+from .util.text import word_join
 
 
 def check_inclusivity(
-    text: str, width: int, log: logging.Logger, verbose: bool = False
-) -> dict:
+    text: str, review: IetfReview, log: logging.Logger, verbose: bool = False
+) -> None:
     """
     Check document terminology for potential inclusivity issues.
 
     @param      text   The document text
-    @param      width  The width the issues should be wrapped to
-
-    @return     List of possible inclusivity issues.
+    @param      review The IETF Review to make comments upon
     """
-    review = {"discuss": [], "comment": [], "nit": []}
     isb_url = (
         # "file:///Users/lars/Documents/Code/terminology/"
         "https://raw.githubusercontent.com/ietf/terminology/main/"
@@ -30,7 +28,7 @@ def check_inclusivity(
 
     if not isb_yaml:
         log.info("Could not fetch in-solidarity.yml from %s", isb_url)
-        return review
+        return
     rules = yaml.safe_load(isb_yaml)
 
     result = {}
@@ -47,15 +45,12 @@ def check_inclusivity(
                 )
 
     if result:
-        review["comment"].append(
-            wrap_para(
-                "Found terminology that should be reviewed for inclusivity; "
-                "see https://www.rfc-editor.org/part2/#inclusive_language "
-                "for background and more guidance:",
-                width=width,
-                end="\n\n",
-            )
+        comment_header = (
+            "Found terminology that should be reviewed for inclusivity; "
+            "see https://www.rfc-editor.org/part2/#inclusive_language "
+            "for background and more guidance:"
         )
+        comment_items = []
         for name, match in result.items():
             terms = word_join(match[0], prefix='"', suffix='"')
             msg = f'Term{"s" if len(match[0]) > 1 else ""} {terms}; '
@@ -66,6 +61,5 @@ def check_inclusivity(
                 msg += "but I have no suggestion for an alternative"
             if verbose:
                 msg += f' (matched "{name}" rule, pattern {match[1]})'
-            review["comment"].extend(bulletize(msg, width=width, end=".\n\n"))
-
-    return review
+            comment_items.append(msg)
+        review.comment_bullets(comment_header, comment_items)

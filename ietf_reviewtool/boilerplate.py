@@ -2,20 +2,18 @@
 
 import re
 
-from .util.text import normalize_ws, unfold, word_join, wrap_para
+from .review import IetfReview
+from .util.text import normalize_ws, unfold, word_join
 
 
-def check_tlp(text: str, status: str, width: int) -> dict:
+def check_tlp(text: str, status: str, review: IetfReview) -> None:
     """
     Check the boilerplate against the Trust Legal Provisions (TLP).
 
     @param      text    The document text
     @param      status  The standards level of this document
-    @param      width   The width the comments should be wrapped to
-
-    @return     List of issues found.
+    @param      review  The IETF Review document to add comments to
     """
-    result = {"discuss": [], "comment": [], "nit": []}
     text = unfold(text)
     if re.search(
         r"""This\s+document\s+may\s+not\s+be\s+modified,?\s+and\s+derivative\s+
@@ -30,32 +28,24 @@ def check_tlp(text: str, status: str, width: int) -> dict:
         )
         if status.lower() == "standards track":
             msg += " And it cannot be published on the Standards Track."
-        result["discuss"].append(wrap_para(msg, width=width))
+        review.discuss(msg)
 
     if re.search(r"Simplified\s+BSD\s+License", text, flags=re.IGNORECASE):
-        result["nit"].append(
-            wrap_para(
-                'Document still refers to the "Simplified BSD License", which '
-                "was corrected in the TLP on September 21, 2021. It should "
-                'instead refer to the "Revised BSD License".',
-                width=width,
-            )
+        review.nit(
+            'Document still refers to the "Simplified BSD License", which '
+            "was corrected in the TLP on September 21, 2021. It should "
+            'instead refer to the "Revised BSD License".'
         )
 
-    return result
 
-
-def check_boilerplate(text: str, status: str, width: int) -> dict:
+def check_boilerplate(text: str, status: str, review: IetfReview) -> None:
     """
     Check the RFC2119/RFC8174 boilerplate in the document.
 
     @param      text    The document text
     @param      status  The standards level of this document
-    @param      width   The width the comments should be wrapped to
-
-    @return     List of issues found.
+    @param      review  The IETF Review document to add comments to
     """
-    result = {"discuss": [], "comment": [], "nit": []}
     uses_keywords = set(re.findall(KEYWORDS_PATTERN, text))
     has_8174_boilerplate = set(re.findall(BOILERPLATE_8174_PATTERN, text))
     has_2119_boilerplate = set(re.findall(BOILERPLATE_2119_PATTERN, text))
@@ -70,13 +60,10 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
 
         if status.lower() in ["informational", "experimental"]:
-            result["comment"].append(
-                wrap_para(
-                    f"Document has {status} status, but uses the RFC2119 "
-                    f"{kw_text} {used_keywords}. Check if this is really "
-                    f"necessary?",
-                    width=width,
-                )
+            review.comment(
+                f"Document has {status} status, but uses the RFC2119 "
+                f"{kw_text} {used_keywords}. Check if this is really "
+                f"necessary?"
             )
 
         if not has_8174_boilerplate:
@@ -99,19 +86,16 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
                 msg += "text with a beginning similar to the RFC2119 boilerplate."
 
     if msg:
-        result["comment"].append(wrap_para(msg, width=width))
+        review.comment(msg)
 
     if uses_keywords:
         lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, text))
         if lc_not:
             lc_not_str = word_join(list(lc_not), prefix='"', suffix='"')
-            result["comment"].append(
-                wrap_para(
-                    f'Using lowercase "not" together with an uppercase '
-                    f"RFC2119 keyword is not acceptable usage. Found: "
-                    f"{lc_not_str}",
-                    width=width,
-                )
+            review.comment(
+                f'Using lowercase "not" together with an uppercase '
+                f"RFC2119 keyword is not acceptable usage. Found: "
+                f"{lc_not_str}"
             )
 
     sotm = ""
@@ -134,12 +118,9 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
     if re.search(TLP_6A_PATTERN, sotm):
         sotm = re.sub(TLP_6A_PATTERN, r"", sotm)
     else:
-        result["comment"].append(
-            wrap_para(
-                'TLP Section 6.a "Submission Compliance for '
-                'Internet-Drafts" boilerplate text seems to have issues.',
-                width=width,
-            )
+        review.comment(
+            'TLP Section 6.a "Submission Compliance for '
+            'Internet-Drafts" boilerplate text seems to have issues.'
         )
 
     idg_issues = False
@@ -150,70 +131,44 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
         elif required:
             idg_issues = True
     if idg_issues and not re.search(COPYRIGHT_ALT_STREAMS, sotm):
-        result["comment"].append(
-            wrap_para(
-                "I-D Guidelines boilerplate text seems to have issues.",
-                width=width,
-            )
-        )
+        review.comment("I-D Guidelines boilerplate text seems to have issues.")
 
     if re.search(COPYRIGHT_IETF, sotm):
         sotm = re.sub(COPYRIGHT_IETF, r"", sotm)
     elif re.search(COPYRIGHT_ALT_STREAMS, sotm):
         sotm = re.sub(COPYRIGHT_ALT_STREAMS, r"", sotm)
-        result["comment"].append(
-            wrap_para(
-                'Document contains a TLP Section 6.b.ii "alternate streams" '
-                "boilerplate.",
-                width=width,
-            )
+        review.comment(
+            'Document contains a TLP Section 6.b.ii "alternate streams" ' "boilerplate."
         )
     else:
-        result["comment"].append(
-            wrap_para(
-                'TLP Section 6.b "Copyright and License Notice" boilerplate '
-                "text seems to have issues.",
-                width=width,
-            )
+        review.comment(
+            'TLP Section 6.b "Copyright and License Notice" boilerplate '
+            "text seems to have issues."
         )
 
     if re.search(NO_MOD_RFC, sotm):
         sotm = re.sub(NO_MOD_RFC, r"", sotm)
-        result["comment"].append(
-            wrap_para(
-                "Document limits derivative works and/or RFC publication with "
-                "a TLP Section 6.c.i boilerplate.",
-                width=width,
-            )
+        review.comment(
+            "Document limits derivative works and/or RFC publication with "
+            "a TLP Section 6.c.i boilerplate.",
         )
     elif re.search(NO_MOD_NO_RFC, sotm):
         sotm = re.sub(NO_MOD_NO_RFC, r"", sotm)
-        result["comment"].append(
-            wrap_para(
-                "Document limits derivative works and/or RFC publication with "
-                "a TLP Section 6.c.ii boilerplate.",
-                width=width,
-            )
+        review.comment(
+            "Document limits derivative works and/or RFC publication with "
+            "a TLP Section 6.c.ii boilerplate.",
         )
     elif re.search(PRE_5378, sotm):
         sotm = re.sub(PRE_5378, r"", sotm)
-        result["comment"].append(
-            wrap_para(
-                'Document has a TLP Section 6.c.iii "pre-5378" boilerplate. '
-                "Is this really needed?",
-                width=width,
-            )
+        review.comment(
+            'Document has a TLP Section 6.c.iii "pre-5378" boilerplate. '
+            "Is this really needed?",
         )
 
     if sotm:
-        result["nit"].append(
-            wrap_para(
-                f'Found stray text in boilerplate: "{sotm.strip()}"',
-                width=width,
-            )
+        review.nit(
+            f'Found stray text in boilerplate: "{sotm.strip()}"',
         )
-
-    return result
 
 
 # pattern matching RFC2119 keywords

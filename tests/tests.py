@@ -23,6 +23,7 @@ import re
 import unittest
 
 import ietf_reviewtool.ietf_reviewtool as irt
+from ietf_reviewtool.review import IetfReview
 
 
 def munge(text: str, repl=r"word") -> str:
@@ -37,8 +38,6 @@ class TestReviewItem(unittest.TestCase):
 
     maxDiff = None
 
-    empty_review = {"discuss": [], "comment": [], "nit": []}
-
     single_line = ["This is a single sentence.\n"]
 
     two_lines = ["This is a first sentence.\n", "This is a second sentence.\n"]
@@ -52,28 +51,22 @@ class TestReviewItem(unittest.TestCase):
 
     def compute_and_verify_result(self, orig, review, expected_result):
         """Compute and verify the review results."""
-        result = irt.review_item(orig, review)
-        if result != expected_result:
-            print(review)
-            print(result)
-            print(irt.fmt_review(result, 79))
-        self.assertEqual(result, expected_result)
+        result = irt.review_item(orig, review, IetfReview())
+        self.assertEqual(str(result), str(expected_result))
 
     def test_all_empty(self):
         """Empty document, empty review."""
-        self.compute_and_verify_result("", "", self.empty_review)
+        self.compute_and_verify_result("", "", IetfReview())
 
     def test_review_empty(self):
         """Dummy document, empty review."""
-        self.compute_and_verify_result(
-            self.single_line, self.single_line, self.empty_review
-        )
+        self.compute_and_verify_result(self.single_line, self.single_line, IetfReview())
 
     def test_single_line_inline_nits(self):
         """Single line, only inline nits."""
         review = self.single_line.copy()
         review[0] = munge(review[0])
-        expected = self.empty_review | {
+        expected = IetfReview() | {
             "nit": [
                 "Paragraph 1, nit:\n",
                 "- This is a single sentence.\n",
@@ -88,7 +81,7 @@ class TestReviewItem(unittest.TestCase):
     def test_two_lines_inline_nits(self):
         """Two lines, only inline nits."""
         expected = [
-            self.empty_review
+            IetfReview()
             | {
                 "nit": [
                     "Paragraph 1, nit:\n",
@@ -99,7 +92,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
             },
-            self.empty_review
+            IetfReview()
             | {
                 "nit": [
                     "Paragraph 1, nit:\n",
@@ -121,7 +114,7 @@ class TestReviewItem(unittest.TestCase):
     def test_two_lines_inline_discuss_single_line(self):
         """Two lines with an inline DISCUSS between them."""
         expected = [
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",
@@ -129,7 +122,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
             },
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",
@@ -152,7 +145,7 @@ class TestReviewItem(unittest.TestCase):
     def test_two_lines_discuss(self):
         """Two lines with a DISCUSS around one of them."""
         expected = [
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",
@@ -164,7 +157,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
             },
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",
@@ -175,7 +168,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
             },
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",
@@ -198,7 +191,7 @@ class TestReviewItem(unittest.TestCase):
     def test_two_lines_discuss_with_nits(self):
         """Two lines with a DISCUSS around one of them, and nits inside."""
         expected = [
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",
@@ -218,7 +211,7 @@ class TestReviewItem(unittest.TestCase):
                     "\n",
                 ],
             },
-            self.empty_review
+            IetfReview()
             | {
                 "discuss": [
                     "Paragraph 1, discuss:\n",

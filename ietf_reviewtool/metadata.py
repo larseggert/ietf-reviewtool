@@ -5,10 +5,10 @@ import re
 
 import num2words
 
+from .review import IetfReview
 from .util.fetch import fetch_meta
 from .util.patterns import SECTION_PATTERN
 from .util.text import (
-    wrap_para,
     unfold,
     word_join,
     get_status,
@@ -17,51 +17,38 @@ from .util.text import (
 
 
 def check_meta(
-    datatracker: str, text: str, meta: dict, width: int, log: logging.Logger
-) -> dict:
+    datatracker: str, text: str, meta: dict, review: IetfReview, log: logging.Logger
+) -> None:
     """
     Check document metadata for issues.
 
     @param      text   The text of the document
     @param      meta   The metadata
-    @param      width  The width the comments should be wrapped to
-
-    @return     List of issues found
+    @param      review The IETF review to comment upon
     """
-    result = {"discuss": [], "comment": [], "nit": []}
 
     level = meta["std_level"] or meta["intended_std_level"]
     if not level:
-        result["discuss"].append(
-            wrap_para(
-                "Datatracker does not record an intended RFC status "
-                "for this document.",
-                width=width,
-            )
+        review.discuss(
+            "Datatracker does not record an intended RFC status " "for this document.",
         )
     else:
         status = get_status(text)
         if status != level and (
             level != "Proposed Standard" or status != "Standards Track"
         ):
-            result["discuss"].append(
-                wrap_para(
-                    f'Intended RFC status in datatracker is "{level}", but '
-                    f'document says "{status}".',
-                    width=width,
-                )
+            review.discuss(
+                f'Intended RFC status in datatracker is "{level}", but '
+                f'document says "{status}".',
             )
 
     num_authors = len(meta["authors"])
     if num_authors > 5:
-        result["comment"].append(
-            wrap_para(
-                f"The document has {num2words.num2words(num_authors)} "
-                "authors, which exceeds the "
-                "recommended author limit. I assume the sponsoring AD has "
-                "agreed that this is appropriate?",
-                width=width,
-            )
+        review.comment(
+            f"The document has {num2words.num2words(num_authors)} "
+            "authors, which exceeds the "
+            "recommended author limit. I assume the sponsoring AD has "
+            "agreed that this is appropriate?",
         )
 
     iana_review_state = (
@@ -69,38 +56,25 @@ def check_meta(
     )
     if iana_review_state:
         if re.match(r".*Not\s+OK", iana_review_state, flags=re.IGNORECASE):
-            result["comment"].append(
-                wrap_para(
-                    "This document seems to have unresolved IANA issues.",
-                    width=width,
-                )
+            review.comment(
+                "This document seems to have unresolved IANA issues.",
             )
         elif re.match(r".*Review\s+Needed", iana_review_state, flags=re.IGNORECASE):
-            result["comment"].append(
-                wrap_para(
-                    "The IANA review of this document seems to not have "
-                    "concluded yet.",
-                    width=width,
-                )
+            review.comment(
+                "The IANA review of this document seems to not have " "concluded yet.",
             )
 
     consensus = meta["consensus"] if "consensus" in meta else None
     if consensus is None:
-        result["comment"].append(
-            wrap_para(
-                "The datatracker state does not indicate whether the "
-                "consensus boilerplate should be included in this document.",
-                width=width,
-            )
+        review.comment(
+            "The datatracker state does not indicate whether the "
+            "consensus boilerplate should be included in this document.",
         )
 
     stream = meta["stream"] if "stream" in meta else None
     if stream != "IETF":
-        result["comment"].append(
-            wrap_para(
-                "This does not seem to be an IETF-stream document.",
-                width=width,
-            )
+        review.comment(
+            "This does not seem to be an IETF-stream document.",
         )
 
     status = get_status(text)
@@ -113,13 +87,10 @@ def check_meta(
                     missing_docs.append(doc)
             if missing_docs:
                 updates = word_join(docs, prefix="RFC")
-                result["discuss"].append(
-                    wrap_para(
-                        f"This document updates {updates}, but does not seem "
-                        f"to include explanatory text about this in the "
-                        f"abstract.",
-                        width=width,
-                    )
+                review.discuss(
+                    f"This document updates {updates}, but does not seem "
+                    f"to include explanatory text about this in the "
+                    f"abstract.",
                 )
 
         for doc in docs:
@@ -128,14 +99,9 @@ def check_meta(
                 meta["std_level"] or meta["intended_std_level"] if meta else "Unknown"
             )
             if not relationship_ok(status, level):
-                result["discuss"].append(
-                    wrap_para(
-                        f"This {status} document {rel} RFC{doc}, " f"which is {level}.",
-                        width=width,
-                    )
+                review.discuss(
+                    f"This {status} document {rel} RFC{doc}, " f"which is {level}.",
                 )
-
-    return result
 
 
 def relationship_ok(status: str, level: str) -> bool:

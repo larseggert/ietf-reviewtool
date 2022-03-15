@@ -5,29 +5,26 @@ import re
 
 import language_tool_python
 
+from .review import IetfReview
 from .util.format import fmt_section_and_paragraph
-from .util.text import unfold, wrap_para, section_and_paragraph
+from .util.text import unfold, section_and_paragraph
 
 
 def check_grammar(
-    review: str,
+    text: str,
     grammar_skip_rules: str,
-    width: int,
+    review: IetfReview,
     show_rule_id: bool = False,
 ) -> dict:
     """
     Check document grammar.
 
-    @param      review  The document text
-    @param      width   The width the issues should be wrapped to
-
-    @return     List of grammar nits
+    @param      text   The document text
+    @param      review The IETF review to comment upon
     """
     issues = [
         i
-        for i in language_tool_python.LanguageTool("en-US").check(
-            unfold("".join(review))
-        )
+        for i in language_tool_python.LanguageTool("en-US").check(unfold("".join(text)))
         if i.ruleId
         not in [
             "ADVERTISEMENT_OF_FOR",
@@ -72,16 +69,15 @@ def check_grammar(
     para_sec = None
     cur = 0
     pos = 0
-    result = {"discuss": [], "comment": [], "nit": []}
     for issue in issues:
-        while pos + len(review[cur + 1]) < issue.offset:
+        while pos + len(text[cur + 1]) < issue.offset:
             para_sec = section_and_paragraph(
-                review[cur + 1], review[cur], para_sec, is_diff=False
+                text[cur + 1], text[cur], para_sec, is_diff=False
             )
-            pos += len(review[cur])
+            pos += len(text[cur])
             cur += 1
 
-        result["nit"].append(fmt_section_and_paragraph(para_sec, "nit"))
+        review.nit(fmt_section_and_paragraph(para_sec, "nit"))
         context = issue.context.lstrip(".")
         offset = issue.offsetInContext - (len(issue.context) - len(context))
         context = context.rstrip(".")
@@ -90,13 +86,13 @@ def check_grammar(
         offset -= len(context[0:offset]) - len(compressed)
         context = re.sub(r"\s+", r" ", context)
 
-        if len(context) > width - 2:
-            cut = math.ceil((len(context) - width + 2) / 2)
+        if len(context) > review.width - 2:
+            cut = math.ceil((len(context) - review.width + 2) / 2)
             context = context[cut:-cut]
             offset -= cut
 
-        result["nit"].append("> " + context + "\n")
-        result["nit"].append("> " + " " * offset + "^" * issue.errorLength + "\n")
+        review.nit("> " + context + "\n")
+        review.nit("> " + " " * offset + "^" * issue.errorLength + "\n")
 
         message = (
             issue.message.replace("“", '"')
@@ -113,6 +109,4 @@ def check_grammar(
         if show_rule_id:
             message = f"{message} [{issue.ruleId}]"
 
-        result["nit"].append(wrap_para(f"{message}", width=width))
-
-    return result
+        review.nit(message)

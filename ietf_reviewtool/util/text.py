@@ -225,38 +225,7 @@ def strip_pagination(text: str) -> str:
     return stripped
 
 
-def wrap_para(text: str, width: int = 79, end: str = "\n\n"):
-    """
-    Return a wrapped version of the text, ending with end.
-
-    @param      text   The text to wrap
-    @param      width  The width to wrap to
-    @param      end    The end to add to the text
-
-    @return     Wrapped version of text followed by end.
-    """
-    return textwrap.fill(text, width=width, break_on_hyphens=False) + end
-
-
-def bulletize(text: str, width: int = 79, end: str = "\n\n"):
-    """
-    Return a wrapped version of the text, ending with end, as a bullet item.
-
-    @param      text   The text to wrap
-    @param      width  The width to wrap to
-    @param      end    The end to add to the text
-
-    @return     Wrapped version of text followed by end, formatted as bullet
-                item.
-    """
-    return textwrap.indent(
-        wrap_para(" * " + text, width - 3, end),
-        "   ",
-        lambda line: not line.startswith(" * "),
-    )
-
-
-def extract_refs(text: str) -> dict:
+def extract_refs(text: list) -> dict:
     """
     Return a dict of references found in the text as well as the normative and
     informative reference sections.

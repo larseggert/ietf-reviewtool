@@ -41,6 +41,7 @@ from .grammar import check_grammar
 from .inclusive import check_inclusivity
 from .metadata import check_meta
 from .references import check_refs
+from .review import IetfReview
 
 from .util.fetch import (
     fetch_url,
@@ -49,10 +50,9 @@ from .util.fetch import (
     fetch_init_cache,
     get_writeups,
 )
-from .util.format import fmt_nit, fmt_comment, fmt_review
+from .util.format import fmt_nit, fmt_comment
 from .util.text import (
     word_join,
-    wrap_para,
     unfold,
     extract_ips,
     extract_urls,
@@ -390,7 +390,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
             write(text, item)
 
 
-def gather_nits(diff: list) -> list:
+def gather_nits(diff: list, review: IetfReview) -> list:
     """
     Return a list of prefixed nits from the current diff.
 
@@ -402,7 +402,6 @@ def gather_nits(diff: list) -> list:
     indicator = {"+": [], "-": []}
     para_sec = None
     prev = None
-    result = []
 
     for num, cur in enumerate(diff):
         # print(cur, end="")
@@ -435,7 +434,7 @@ def gather_nits(diff: list) -> list:
             indicator[kind].append(None)
 
         elif changed["-"] or changed["+"]:
-            result.extend(fmt_nit(changed, indicator, para_sec))
+            review.nit(fmt_nit(changed, indicator, para_sec))
 
         elif not nxt and kind != " ":
             changed[kind].append(cur)
@@ -446,9 +445,7 @@ def gather_nits(diff: list) -> list:
         prev = kind
 
     if changed["-"] or changed["+"]:
-        result.extend(fmt_nit(changed, indicator, para_sec))
-
-    return result
+        review.nit(fmt_nit(changed, indicator, para_sec))
 
 
 def strip_nits_from_diff(diff: list) -> list:
@@ -498,16 +495,13 @@ def strip_nits_from_diff(diff: list) -> list:
     return result
 
 
-def gather_comments(diff: list, width: int) -> dict:
+def gather_comments(diff: list, review: IetfReview) -> None:
     """
-    Return a dict that contains lists of all comments of all categories.
+    Gather comments in diff into review.
 
-    @param      diff   A diff with nits removed (by strip_nits_from_diff)
-    @param      width  The width to wrap to
-
-    @return     A review dict.
+    @param      diff    A diff with nits removed (by strip_nits_from_diff)
+    @param      review  IETF Review object.
     """
-    result = {"discuss": [], "comment": [], "nit": []}
     para_sec = None
     item = {}
 
@@ -517,7 +511,7 @@ def gather_comments(diff: list, width: int) -> dict:
         start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
         if start and start.group(1):
             if "cat" in item:
-                result[item["cat"]].extend(fmt_comment(item, para_sec, width))
+                getattr(review, item["cat"])(fmt_comment(item, para_sec))
             item["cat"] = start.group(1).lower()
             item["ctx"] = []
             item["ctx_ok"] = start.group(2) != ""
@@ -543,22 +537,20 @@ def gather_comments(diff: list, width: int) -> dict:
                     item["txt"].append(cur)
 
             if item["txt_ok"] or nxt is None:
-                result[item["cat"]].extend(fmt_comment(item, para_sec, width))
+                getattr(review, item["cat"])(fmt_comment(item, para_sec))
 
         para_sec = section_and_paragraph(nxt, cur, para_sec)
 
-    return result
+    return review
 
 
-def review_item(orig: list, rev: list, width: int = 79) -> dict:
+def review_item(orig: list, rev: list, review: IetfReview) -> IetfReview:
     """
     Calculates a diff between orig and rev.
 
-    @param      orig   The original text
-    @param      rev    The revised text
-    @param      width  The width to wrap to
-
-    @return     A diff between orig and rev.
+    @param      orig    The original text
+    @param      rev     The revised text
+    @param      review  IETF Review object.
     """
 
     # difflib can't deal with single lines it seems
@@ -568,23 +560,19 @@ def review_item(orig: list, rev: list, width: int = 79) -> dict:
         rev.append("\n")
 
     diff = list(difflib.ndiff(orig, rev, linejunk=None, charjunk=None))
-
-    nits = gather_nits(diff)
+    gather_nits(diff, review)
     diff = strip_nits_from_diff(diff)
-    review = gather_comments(diff, width)
-    review["nit"].extend(nits)
+    gather_comments(diff, review)
     return review
 
 
-def check_xml(doc: str) -> dict:
+def check_xml(doc: str, review: IetfReview) -> dict:
     """
     Check any XML in the document for issues
 
-    @param      doc   The document text
-
-    @return     List of issues found
+    @param      doc     The XML document (as a string)
+    @param      review  IETF Review object
     """
-    result = {"discuss": [], "comment": [], "nit": []}
     snippets = re.finditer(r"^(.*)<\?xml\s", doc, flags=re.MULTILINE)
     for snip in snippets:
         start = re.search(r"<\s*([\w:]+)", doc[snip.start() :])
@@ -610,32 +598,7 @@ def check_xml(doc: str) -> dict:
         except xml.etree.ElementTree.ParseError as err:
             text = text.splitlines(keepends=True)
             print(text[err.position[0] - 2])
-            result["nit"].append(
-                f'XML issue: "{err}":\n> {text[err.position[0] - 2]}\n'
-            )
-
-    return result
-
-
-def review_extend(review: dict, extension: dict) -> dict:
-    """
-    Extend the review with the lines in extensions by appending them to the
-    various categories.
-
-    @param      review     The review
-    @param      extension  The extension
-
-    @return     The extended review.
-    """
-    for cat in review:
-        if cat in extension:
-            review[cat].extend(extension[cat])
-
-    for cat in extension:
-        if cat not in review:
-            review[cat] = extension[cat]
-
-    return review
+            review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}\n')
 
 
 @click.command("review", help="Extract review from named items.")
@@ -777,7 +740,8 @@ def review_items(
                 orig = rev
             orig_lines = orig.splitlines(keepends=True)
             rev = rev.splitlines(keepends=True)
-            review = review_item(orig_lines, rev, width=state.width)
+            review = IetfReview(state.width)
+            review_item(orig_lines, rev, review)
             status = get_status(orig)
             name = basename(item)
             not_id = not name.startswith("draft-")
@@ -801,47 +765,39 @@ def review_items(
                             )
 
                     if entities:
-                        review["nit"].append(
-                            wrap_para(
-                                f"The text version of this document contains "
-                                f"these HTML entities, which might indicate "
-                                f"issues with its XML source: "
-                                f"{word_join(list(set(entities)))}",
-                                width=state.width,
-                            )
+                        review.nit(
+                            f"The text version of this document contains "
+                            f"these HTML entities, which might indicate "
+                            f"issues with its XML source: "
+                            f"{word_join(list(set(entities)))}",
                         )
 
             if chk_boilerpl and not not_id:
-                review_extend(review, check_boilerplate(orig, status, state.width))
+                check_boilerplate(orig, status, review)
 
             if chk_tlp:
-                review_extend(review, check_tlp(orig, status, state.width))
+                check_tlp(orig, status, review)
 
             meta = fetch_meta(state.datatracker, name, log)
             if chk_meta and meta:
-                review_extend(
-                    review,
-                    check_meta(state.datatracker, orig, meta, state.width, log),
-                )
+                check_meta(state.datatracker, orig, meta, review, log)
 
             # check_xml(orig)
-            review_extend(review, check_xml("".join(rev)))
+            check_xml("".join(rev), review)
 
             verbose = state.verbose > 0
+
             if chk_refs and not not_id:
-                review_extend(
+                check_refs(
+                    state.datatracker,
+                    extract_refs(orig),
+                    get_relationships(orig),
+                    name,
+                    status,
+                    meta,
+                    orig,
                     review,
-                    check_refs(
-                        state.datatracker,
-                        extract_refs(orig),
-                        get_relationships(orig),
-                        state.width,
-                        name,
-                        status,
-                        meta,
-                        orig,
-                        log,
-                    ),
+                    log,
                 )
 
             if chk_urls:
@@ -853,12 +809,11 @@ def review_items(
                         result.append(url)
 
                 if result:
-                    review["nit"].append(
+                    review.nit_bullets(
                         "These URLs point to tools.ietf.org, which is "
-                        "being deprecated:\n",
+                        "being deprecated:",
+                        result,
                     )
-                    review["nit"].extend(f" * {line}\n" for line in result)
-                    review["nit"].append("\n")
                     urls -= set(result)
 
                 result = []
@@ -867,11 +822,7 @@ def review_items(
                         result.append(url)
 
                 if result:
-                    review["nit"].append(
-                        "Found non-HTTP URLs in the document:\n",
-                    )
-                    review["nit"].extend(f" * {line}\n" for line in result)
-                    review["nit"].append("\n")
+                    review.nit_bullets("Found non-HTTP URLs in the document:", result)
 
                 reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
                 result = []
@@ -880,11 +831,9 @@ def review_items(
                         result.append(url)
 
                 if result:
-                    review["nit"].append(
-                        "These URLs in the document did not return content:\n",
+                    review.nit_bullets(
+                        "These URLs in the document did not return content:", result
                     )
-                    review["nit"].extend(f" * {line}\n" for line in result)
-                    review["nit"].append("\n")
 
                 result = []
                 for url in urls:
@@ -896,18 +845,14 @@ def review_items(
                             result.append(url)
 
                 if result:
-                    review["nit"].append(
+                    review.nit_bullets(
                         "These URLs in the document can probably be converted "
-                        "to HTTPS:\n",
+                        "to HTTPS:",
+                        result,
                     )
-                    review["nit"].extend(f" * {line}\n" for line in result)
-                    review["nit"].append("\n")
 
             if chk_inclusiv:
-                review_extend(
-                    review,
-                    check_inclusivity(unfold("".join(rev)), state.width, log, verbose),
-                )
+                check_inclusivity(unfold("".join(rev)), review, log, verbose)
 
             art_reviews = fetch_dt(
                 state.datatracker,
@@ -937,7 +882,7 @@ def review_items(
                     else:
                         msg += "block or address: "
                     msg += word_join(faulty, prefix='"', suffix='"') + "."
-                    review["nit"].append(wrap_para(msg))
+                    review.nit(msg)
 
                 faulty = []
                 for ip_obj in result:
@@ -978,7 +923,7 @@ def review_items(
                         msg += "block or address"
                     msg += " not inside RFC5737/RFC3849 example ranges: "
                     msg += word_join(faulty, prefix='"', suffix='"') + "."
-                    review["comment"].append(wrap_para(msg))
+                    review.comment(msg)
 
             if art_reviews:
                 for rev_assignment in art_reviews:
@@ -1032,31 +977,24 @@ def review_items(
                         continue
 
                     if group["acronym"].lower() == thank_art.lower():
-                        review["comment"].append(
-                            wrap_para(
-                                "Thanks to "
-                                + (reviewer["name_from_draft"] or reviewer["name"])
-                                + f" for their {group['name']} review "
-                                f"({art_review['external_url']})."
-                            )
+                        review.comment(
+                            "Thanks to "
+                            + (reviewer["name_from_draft"] or reviewer["name"])
+                            + f" for their {group['name']} review "
+                            f"({art_review['external_url']})."
                         )
 
             else:
                 log.warning("Could not fetch ART reviews for %s", name)
 
             if name.startswith("charter-"):
-                review["comment"].append(
-                    "Note to self: Ask about any chair changes.\n\n",
+                review.comment(
+                    "Note to self: Ask about any chair changes.",
                 )
 
             if chk_grammar:
-                review_extend(
-                    review,
-                    check_grammar(rev, grammar_skip_rules, state.width, verbose),
-                )
-
-
-            fmt_review(review, state.width)
+                check_grammar(rev, grammar_skip_rules, review, verbose)
+            print(review)
 
 
 @click.command(
