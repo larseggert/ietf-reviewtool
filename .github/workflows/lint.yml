@@ -24,7 +24,7 @@ jobs:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with flake8
       run: flake8 | lintly --use-checks --format=flake8
---use-checks       env:
+      env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with pylint
       run: pylint ietf_reviewtool tests --output-format=json | lintly --use-checks --format=pylint-json
