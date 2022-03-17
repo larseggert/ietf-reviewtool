@@ -2,6 +2,9 @@ name: Lint
 
 on: [pull_request]
 
+env:
+  LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -20,13 +23,7 @@ jobs:
         pip install -r requirements.txt
     - name: Lint with black
       run: black . --check | lintly --use-checks --format=black
-      env:
-        LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with flake8
       run: flake8 | lintly --use-checks --format=flake8
-      env:
-        LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with pylint
       run: pylint ietf_reviewtool tests --output-format=json | lintly --use-checks --format=pylint-json
-      env:
-        LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
