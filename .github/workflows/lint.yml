@@ -25,6 +25,6 @@ jobs:
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with pylint
-      run: pylint . --output-format=json | lintly --format=pylint-json
+      run: pylint ietf_reviewtool tests --output-format=json | lintly --format=pylint-json
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
