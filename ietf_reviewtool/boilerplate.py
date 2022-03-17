@@ -1,3 +1,5 @@
+"""ietf-reviewtool boilerplate module"""
+
 import re
 
 from .util.text import normalize_ws, unfold, word_join, wrap_para
@@ -67,14 +69,15 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
         used_keywords = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
 
-        # if status.lower() in ["informational", "experimental"]:
-        #     result["comment"].append(
-        #         wrap_para(
-        #             f"Document has {status} status, but uses the RFC2119 "
-        #             f"{kw_text} {used_keywords}.",
-        #             width=width,
-        #         )
-        #     )
+        if status.lower() in ["informational", "experimental"]:
+            result["comment"].append(
+                wrap_para(
+                    f"Document has {status} status, but uses the RFC2119 "
+                    f"{kw_text} {used_keywords}. Check if this is really "
+                    f"necessary?",
+                    width=width,
+                )
+            )
 
         if not has_8174_boilerplate:
             msg = (
@@ -86,20 +89,14 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             elif has_boilerplate_begin:
                 msg += " (It contains some text with a similar beginning.)"
     else:
-        if (
-            has_8174_boilerplate
-            or has_2119_boilerplate
-            or has_boilerplate_begin
-        ):
+        if has_8174_boilerplate or has_2119_boilerplate or has_boilerplate_begin:
             msg = "This document does not use RFC2119 keywords, but contains"
             if has_8174_boilerplate:
                 msg += "the RFC8174 boilerplate."
             elif has_2119_boilerplate:
                 msg += "the RFC2119 boilerplate."
             elif has_boilerplate_begin:
-                msg += (
-                    "text with a beginning similar to the RFC2119 boilerplate."
-                )
+                msg += "text with a beginning similar to the RFC2119 boilerplate."
 
     if msg:
         result["comment"].append(wrap_para(msg, width=width))
@@ -129,9 +126,7 @@ def check_boilerplate(text: str, status: str, width: int) -> dict:
             continue
         if re.match(r"^\s*Copyright Notice\s*$", line):
             continue
-        if re.match(
-            r"^\s*Table\s+of\s+Contents\s*$", line, flags=re.IGNORECASE
-        ):
+        if re.match(r"^\s*Table\s+of\s+Contents\s*$", line, flags=re.IGNORECASE):
             break
         sotm += line
     sotm = unfold(sotm)

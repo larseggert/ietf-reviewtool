@@ -1,3 +1,5 @@
+"""ietf-reviewtool patterns module"""
+
 import re
 
 # pattern matching section headings

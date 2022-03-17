@@ -1,3 +1,5 @@
+"""ietf-reviewtool fetch module"""
+
 import datetime
 import json
 import logging
@@ -13,7 +15,12 @@ from .text import basename
 from .utils import get_latest, read, write
 
 
-def fetch_init_cache(log):
+def fetch_init_cache(log: logging.Logger) -> None:
+    """
+    Initialize the fetch cache.
+
+    @param      log   The log to write to
+    """
     cache = appdirs.user_cache_dir("ietf-reviewtool")
     if not os.path.isdir(cache):
         os.mkdir(cache)

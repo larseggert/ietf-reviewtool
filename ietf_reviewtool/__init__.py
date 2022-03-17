@@ -1,3 +1,5 @@
+"""ietf-reviewtool module"""
+
 try:
     from importlib.metadata import version, PackageNotFoundError
 except ImportError:

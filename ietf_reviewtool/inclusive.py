@@ -1,3 +1,5 @@
+"""ietf-reviewtool inclusive module"""
+
 import itertools
 import logging
 import re

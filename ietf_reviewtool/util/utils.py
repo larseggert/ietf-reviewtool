@@ -1,3 +1,5 @@
+"""ietf-reviewtool utils module"""
+
 import datetime
 import logging
 import sys

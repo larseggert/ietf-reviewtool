@@ -1,3 +1,5 @@
+"""ietf-reviewtool format module"""
+
 import re
 
 from .text import wrap_para
@@ -57,9 +59,7 @@ def fmt_comment(item: dict, para_sec: list, width: int) -> list:
     if item["ctx"]:
         result.append("\n")
     txt = "".join([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
-    result.append(
-        wrap_para(txt, width=width, end="\n\n" if item["txt"] else "")
-    )
+    result.append(wrap_para(txt, width=width, end="\n\n" if item["txt"] else ""))
     if item["ctx"]:
         para_sec[0] -= 1  # don't count this as a paragraph
     item.clear()
@@ -94,7 +94,7 @@ def fmt_review(review: dict, width: int) -> None:
         if review[category]:
             used_categories += 1
 
-    for category in boilerplate:
+    for category, content in boilerplate.items():
         if not review[category]:
             continue
 
@@ -103,8 +103,8 @@ def fmt_review(review: dict, width: int) -> None:
             print(category.upper())
             print("-" * width)
 
-        if boilerplate[category]:
-            print(wrap_para(boilerplate[category], width=width, end="\n"))
+        if content:
+            print(wrap_para(content, width=width, end="\n"))
 
         for line in review[category]:
             print(line, end="")
