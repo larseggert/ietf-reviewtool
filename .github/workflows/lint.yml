@@ -18,14 +18,14 @@ jobs:
         pip install flake8 pylint lintly poetry
         poetry install --no-root
     - name: Lint with black
-      run: black . --check 2>&1 >/dev/null | lintly --format=black
+      run: poetry run black . --check 2>&1 | tee /dev/tty | lintly --format=black
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with flake8
-      run: flake8 | lintly
+      run: poetry run flake8 | tee /dev/tty | lintly
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with pylint
-      run: pylint ietf_reviewtool tests --output-format=json | lintly --format=pylint-json
+      run: poetry run pylint ietf_reviewtool tests --output-format=json 2>&1 | tee /dev/tty | lintly --format=pylint-json
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
