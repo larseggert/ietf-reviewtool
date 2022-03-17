@@ -16,16 +16,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install markupsafe==2.0.1 black==20.8b1 # this is temporary
         pip install flake8 pylint lintly poetry
-        poetry install --no-root
+        poetry install -vvv
+        lintly -h
     - name: Lint with black
-      run: poetry run black . --check 2>&1 | tee /dev/tty | lintly --format=black
+      run: black . --check 2>&1 | lintly --format=black
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with flake8
-      run: poetry run flake8 | tee /dev/tty | lintly
+      run: flake8 | lintly
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with pylint
-      run: poetry run pylint ietf_reviewtool tests --output-format=json 2>&1 | tee /dev/tty | lintly --format=pylint-json
+      run: pylint ietf_reviewtool tests --output-format=json 2>&1 | lintly --format=pylint-json
       env:
         LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
