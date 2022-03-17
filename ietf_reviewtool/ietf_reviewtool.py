@@ -77,6 +77,10 @@ TEST_NET_V6 = ipaddress.ip_network("2001:db8::/32")
 
 
 class State:
+    """
+    This class describes the global state.
+    """
+
     def __init__(self, datatracker=None, verbose=0, default=True, width=79):
         self.datatracker = datatracker
         self.verbose = verbose
@@ -115,6 +119,15 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
 )
 @click.pass_context
 def cli(ctx: object, datatracker: str, verbose: int, default: bool, width: int) -> None:
+    """
+    Do some initialization
+
+    @param      ctx          The context object
+    @param      datatracker  The datatracker URL to use
+    @param      verbose      Whether to be (very) verbose during operation
+    @param      default      Whether all checks are enabled as a default
+    @param      width        The character width any output should be wrapped to
+    """
     datatracker = re.sub(r"/+$", "", datatracker)
     ctx.obj = State(datatracker, verbose, default, width)
     log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
@@ -139,6 +152,13 @@ def cli(ctx: object, datatracker: str, verbose: int, default: bool, width: int) 
 def extract_urls_from_items(
     items: list, examples: bool = False, common: bool = True
 ) -> None:
+    """
+    Extract URLs from items.
+
+    @param      items     The items to extract URLs from.
+    @param      examples  Include "example" URLs (e.g., to example.com, etc.)
+    @param      common    Include "common" URLs (e.g., to rfc-editor.org)
+    """
     urls = set()
     for item in items:
         if not os.path.isfile(item):
@@ -190,6 +210,17 @@ def fetch(
     fetch_xml: bool,
     extract_markdown: bool,
 ) -> None:
+    """
+    Fetch items.
+
+    @param      state             The global program state
+    @param      items             The names of items to fetch
+    @param      strip             Whether to strip the fetched items
+    @param      fetch_writeups    Whether to also fetch related writeups
+    @param      fetch_xml         Whether to also fetch XML sources
+    @param      extract_markdown  Whether to attempt to extract Markdown from
+                                  fetched XML
+    """
     get_items(
         items,
         state.datatracker,
@@ -257,7 +288,7 @@ def get_items(
                 r"(.*)(((-\d+){2}).txt)$", r"\1/withmilestones\2", file_name
             )
             url = datatracker + "/doc/" + url_pattern
-            # TODO: the charters in rsync don't have milestones, can't use
+            # the charters in rsync don't have milestones, can't use
             # cache = os.getenv("IETF_CHARTERS")
             do_strip = False
         elif match:
@@ -391,7 +422,7 @@ def gather_nits(diff: list) -> list:
         elif kind == "?" and prev in ["+", "-"]:
             indicator[prev].append(cur)
 
-        elif kind in ["-"]:  # FIXME: this catches nits: ["+", "-"]:
+        elif kind in ["-"]:  # this would catch nits: ["+", "-"]:
             changed[kind].append(cur)
             indicator[kind].append(None)
 
@@ -1077,6 +1108,18 @@ def fetch_agenda(
     fetch_xml,
     extract_markdown,
 ):
+    """
+    Fetches all items on the next telechat agenda.
+
+    @param      state             The global program state
+    @param      mkdir             Whether to create a directory
+    @param      save_agenda       Whether to save the agenda JSON
+    @param      strip             Whether to strip fetched agenda items
+    @param      fetch_writeups    Whether to also fetch related writeups
+    @param      fetch_xml         Whether to also fetch XML sources of items
+    @param      extract_markdown  Whether to attempt to extract Markdown from
+                                  XML sources
+    """
     agenda = get_current_agenda(state.datatracker, log)
     if "telechat-date" not in agenda:
         return
@@ -1130,6 +1173,3 @@ cli.add_command(fetch)
 cli.add_command(fetch_agenda)
 cli.add_command(review_items)
 cli.add_command(strip_items)
-
-if __name__ == "__main__":
-    cli()

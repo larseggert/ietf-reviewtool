@@ -1,3 +1,5 @@
+"""ietf-reviewtool agenda module"""
+
 import json
 import logging
 

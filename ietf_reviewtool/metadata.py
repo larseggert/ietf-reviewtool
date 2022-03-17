@@ -1,3 +1,5 @@
+"""ietf-reviewtool metadata module"""
+
 import logging
 import re
 

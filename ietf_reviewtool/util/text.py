@@ -1,3 +1,5 @@
+"""ietf-reviewtool text module"""
+
 import logging
 import re
 import textwrap
@@ -172,7 +174,7 @@ def strip_pagination(text: str) -> str:
     sentence = False
     have_blank = False
     for num, line in enumerate(text.split("\n")):
-        # FIXME: doesn't always leave a blank line after a figure caption
+        # this doesn't always leave a blank line after a figure caption, improve?
         mod = re.sub(r"\r", "", line)
         mod = re.sub(r"\s+$", "", mod)
         if re.search(r"\[?[Pp]age [\divx]+\]?[\s\f]*$", mod):
@@ -286,12 +288,12 @@ def extract_refs(text: list) -> dict:
         parts[part] += line
 
     refs = {}
-    for part in parts:
+    for part, content in parts.items():
         refs[part] = re.findall(
             r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\]"
             + (r"|RFC\d+|draft-[-a-z\d_.]+" if part == "text" else r"")
             + r")",
-            unfold(parts[part]),
+            unfold(content),
             flags=re.IGNORECASE,
         )
         refs[part] = {f"[{untag(ref)}]" for ref in refs[part]}

@@ -1,3 +1,5 @@
+"""ietf-reviewtool grammr module"""
+
 import math
 import re
 

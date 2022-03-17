@@ -1,3 +1,5 @@
+"""ietf-reviewtool references module"""
+
 import logging
 import re
 
@@ -256,6 +258,7 @@ def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bo
     if kind == "informative":
         return False
     die(f"unknown kind {kind}", log)
+    return False  # can't be reached, but makes pylint quiet
 
 
 def fetch_downrefs(datatracker: str, log: logging.Logger) -> list:
