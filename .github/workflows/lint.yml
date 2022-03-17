@@ -14,13 +14,13 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install markupsafe==2.0.1  # this is temporary
-        pip install black flake8 pylint lintly poetry
+        pip install markupsafe==2.0.1 black==20.8b1 # this is temporary
+        pip install flake8 pylint lintly poetry
         poetry install --no-root
-    # - name: Lint with black
-    #   run: black . --check 2>&1 >/dev/null | lintly --format=black
-    #   env:
-    #     LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
+    - name: Lint with black
+      run: black . --check 2>&1 >/dev/null | lintly --format=black
+      env:
+        LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with flake8
       run: flake8 | lintly
       env:
