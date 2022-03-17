@@ -16,10 +16,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install markupsafe==2.0.1  # this is temporary
         pip install flake8 lintly
-    - name: Lintly
-      run: lintly -h
-      env:
-        LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
     - name: Lint with flake8
       run: flake8 | lintly
       env:
