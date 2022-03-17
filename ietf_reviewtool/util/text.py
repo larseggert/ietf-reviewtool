@@ -428,9 +428,7 @@ def section_and_paragraph(
 
     @return     An updated (paragraph number, section name) list.
     """
-    [para, sec, had_nn] = (
-        para_sec if para_sec is not None else [1, None, False]
-    )
+    [para, sec, had_nn] = para_sec if para_sec is not None else [1, None, False]
 
     # track paragraphs
     pat = {True: r"^[\- ] +$", False: r"^\s*$"}
