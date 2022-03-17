@@ -1,29 +1,35 @@
+# See https://github.com/pymor/pymor/blob/main/.github/workflows/linter.yml
+
 name: Lint
 
 on: [pull_request]
-
-env:
-  LINTLY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.x"
+      uses: actions/setup-python@v3
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install markupsafe==2.0.1 black==20.8b1 # this is temporary
-        pip install flake8 pylint lintly poetry
+        pip install flake8 pylint poetry
         poetry export -o requirements.txt
         pip install -r requirements.txt
+    - name: Prepare artifacts directory
+      run: |
+        mkdir -p ./linter_output
+        echo ${{ github.event.number }} > ./linter_output/pr_number
+        echo ${{ github.event.pull_request.head.sha }} > ./linter_output/head_sha
     - name: Lint with black
-      run: black . --check | lintly --use-checks --format=black
+      run: black . --check 2>&1 >/dev/null | tee ./linter_output/black.out
     - name: Lint with flake8
-      run: flake8 | lintly --use-checks --format=flake8
+      run: flake8 | tee ./linter_output/flake8.out
     - name: Lint with pylint
-      run: pylint ietf_reviewtool tests --output-format=json | lintly --use-checks --format=pylint-json
+      run: pylint ietf_reviewtool tests --output-format=json | tee ./linter_output/pylint.out
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: linter_output
+        path: linter_output
