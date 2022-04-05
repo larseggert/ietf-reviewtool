@@ -256,7 +256,7 @@ def bulletize(text: str, width: int = 79, end: str = "\n\n"):
     )
 
 
-def extract_refs(text: list) -> dict:
+def extract_refs(text: str) -> dict:
     """
     Return a dict of references found in the text as well as the normative and
     informative reference sections.
@@ -287,7 +287,7 @@ def extract_refs(text: list) -> dict:
                 part = "text"
         parts[part] += line
 
-    refs = {}
+    refs: dict[str, list[str]] = {}
     for part, content in parts.items():
         refs[part] = re.findall(
             r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\]"
@@ -296,9 +296,9 @@ def extract_refs(text: list) -> dict:
             unfold(content),
             flags=re.IGNORECASE,
         )
-        refs[part] = {f"[{untag(ref)}]" for ref in refs[part]}
+        refs[part] = list({f"[{untag(ref)}]" for ref in refs[part]})
 
-    resolved = {}
+    resolved: dict[str, list[str]] = {}
     for part in ["informative", "normative"]:
         resolved[part] = []
         for ref in refs[part]:

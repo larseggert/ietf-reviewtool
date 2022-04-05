@@ -203,7 +203,7 @@ def extract_urls_from_items(
 )
 @click.pass_obj
 def fetch(
-    state: object,
+    state: State,
     items: list,
     strip: bool,
     fetch_writeups: bool,
@@ -576,7 +576,7 @@ def review_item(orig: list, rev: list, width: int = 79) -> dict:
     return review
 
 
-def check_xml(doc: str) -> None:
+def check_xml(doc: str) -> dict:
     """
     Check any XML in the document for issues
 
@@ -709,7 +709,7 @@ def review_extend(review: dict, extension: dict) -> dict:
 )
 @click.pass_obj
 def review_items(
-    state: object,
+    state: State,
     items: list,
     chk_urls: bool,
     chk_ips: bool,
@@ -828,12 +828,6 @@ def review_items(
             review_extend(review, check_xml("".join(rev)))
 
             verbose = state.verbose > 0
-            if chk_grammar:
-                review_extend(
-                    review,
-                    check_grammar(rev, grammar_skip_rules, state.width, verbose),
-                )
-
             if chk_refs and not not_id:
                 review_extend(
                     review,
@@ -912,7 +906,7 @@ def review_items(
             if chk_inclusiv:
                 review_extend(
                     review,
-                    check_inclusivity(unfold("".join(rev)), state.width, verbose),
+                    check_inclusivity(unfold("".join(rev)), state.width, log, verbose),
                 )
 
             art_reviews = fetch_dt(
@@ -1055,6 +1049,13 @@ def review_items(
                     "Note to self: Ask about any chair changes.\n\n",
                 )
 
+            if chk_grammar:
+                review_extend(
+                    review,
+                    check_grammar(rev, grammar_skip_rules, state.width, verbose),
+                )
+
+
             fmt_review(review, state.width)
 
 
@@ -1100,7 +1101,7 @@ def review_items(
 )
 @click.pass_obj
 def fetch_agenda(
-    state: object,
+    state: State,
     mkdir,
     save_agenda,
     strip,
