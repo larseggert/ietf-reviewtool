@@ -2,7 +2,6 @@
 
 import logging
 import re
-import textwrap
 import urllib.parse
 
 import urlextract
@@ -225,38 +224,7 @@ def strip_pagination(text: str) -> str:
     return stripped
 
 
-def wrap_para(text: str, width: int = 79, end: str = "\n\n"):
-    """
-    Return a wrapped version of the text, ending with end.
-
-    @param      text   The text to wrap
-    @param      width  The width to wrap to
-    @param      end    The end to add to the text
-
-    @return     Wrapped version of text followed by end.
-    """
-    return textwrap.fill(text, width=width, break_on_hyphens=False) + end
-
-
-def bulletize(text: str, width: int = 79, end: str = "\n\n"):
-    """
-    Return a wrapped version of the text, ending with end, as a bullet item.
-
-    @param      text   The text to wrap
-    @param      width  The width to wrap to
-    @param      end    The end to add to the text
-
-    @return     Wrapped version of text followed by end, formatted as bullet
-                item.
-    """
-    return textwrap.indent(
-        wrap_para(" * " + text, width - 3, end),
-        "   ",
-        lambda line: not line.startswith(" * "),
-    )
-
-
-def extract_refs(text: str) -> dict:
+def extract_refs(text: list) -> dict:
     """
     Return a dict of references found in the text as well as the normative and
     informative reference sections.
@@ -335,26 +303,6 @@ def untag(tag: str) -> str:
     @return     Tag without angle brackets.
     """
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
-
-
-def wrap_and_indent(text: str, width: int = 50) -> str:
-    """
-    Wrap and indent a string if it is longer than width characters.
-
-    @param      text   The text to wrap and indent
-    @param      width  The width to wrap to
-
-    @return     Wrapped and indented text, or original text.
-    """
-    return (
-        "\n"
-        + textwrap.indent(
-            textwrap.fill(text, width=width - 5, break_on_hyphens=False),
-            "     ",
-        )
-        if len(text) > 50
-        else text
-    )
 
 
 def get_status(doc: str) -> str:
