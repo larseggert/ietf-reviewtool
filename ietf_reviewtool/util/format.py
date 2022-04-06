@@ -14,7 +14,7 @@ def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
     @return     A formatted prefix line.
     """
     para_sec = para_sec if para_sec else [1, None, False]
-    line = f"{para_sec[1]}, p" if para_sec[1] else "P"
+    line = f"{para_sec[1].strip()}, p" if para_sec[1] else "P"
     line += f"aragraph {para_sec[0]}, {cat}:\n"
     return line
 
@@ -38,8 +38,7 @@ def fmt_nit(changed: list, indicator: list, para_sec: list) -> str:
                 result.append(tup[1].replace("?", prefix, 1))
         indicator[prefix].clear()
         changed[prefix].clear()
-    result.append("\n")
-    return "\n".join(result)
+    return "".join(result)
 
 
 def fmt_comment(item: dict, para_sec: list) -> str:
@@ -61,4 +60,4 @@ def fmt_comment(item: dict, para_sec: list) -> str:
     if item["ctx"]:
         para_sec[0] -= 1  # don't count this as a paragraph
     item.clear()
-    return "\n".join(result)
+    return "".join(result)

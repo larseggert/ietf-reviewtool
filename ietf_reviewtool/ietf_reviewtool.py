@@ -434,7 +434,7 @@ def gather_nits(diff: list, review: IetfReview) -> list:
             indicator[kind].append(None)
 
         elif changed["-"] or changed["+"]:
-            review.nit(fmt_nit(changed, indicator, para_sec))
+            review.nit(fmt_nit(changed, indicator, para_sec), wrap=False)
 
         elif not nxt and kind != " ":
             changed[kind].append(cur)
@@ -445,7 +445,7 @@ def gather_nits(diff: list, review: IetfReview) -> list:
         prev = kind
 
     if changed["-"] or changed["+"]:
-        review.nit(fmt_nit(changed, indicator, para_sec))
+        review.nit(fmt_nit(changed, indicator, para_sec), wrap=False)
 
 
 def strip_nits_from_diff(diff: list) -> list:
@@ -511,7 +511,7 @@ def gather_comments(diff: list, review: IetfReview) -> None:
         start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
         if start and start.group(1):
             if "cat" in item:
-                getattr(review, item["cat"])(fmt_comment(item, para_sec))
+                getattr(review, item["cat"])(fmt_comment(item, para_sec), wrap=False)
             item["cat"] = start.group(1).lower()
             item["ctx"] = []
             item["ctx_ok"] = start.group(2) != ""
@@ -537,7 +537,7 @@ def gather_comments(diff: list, review: IetfReview) -> None:
                     item["txt"].append(cur)
 
             if item["txt_ok"] or nxt is None:
-                getattr(review, item["cat"])(fmt_comment(item, para_sec))
+                getattr(review, item["cat"])(fmt_comment(item, para_sec), wrap=False)
 
         para_sec = section_and_paragraph(nxt, cur, para_sec)
 
@@ -598,7 +598,7 @@ def check_xml(doc: str, review: IetfReview) -> dict:
         except xml.etree.ElementTree.ParseError as err:
             text = text.splitlines(keepends=True)
             print(text[err.position[0] - 2])
-            review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}\n')
+            review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
 
 
 @click.command("review", help="Extract review from named items.")
@@ -766,9 +766,9 @@ def review_items(
 
                     if entities:
                         review.nit(
-                            f"The text version of this document contains "
-                            f"these HTML entities, which might indicate "
-                            f"issues with its XML source: "
+                            "The text version of this document contains "
+                            "these HTML entities, which might indicate "
+                            "issues with its XML source: "
                             f"{word_join(list(set(entities)))}",
                         )
 

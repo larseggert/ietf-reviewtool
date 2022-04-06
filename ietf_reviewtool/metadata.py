@@ -30,7 +30,7 @@ def check_meta(
     level = meta["std_level"] or meta["intended_std_level"]
     if not level:
         review.discuss(
-            "Datatracker does not record an intended RFC status " "for this document.",
+            "Datatracker does not record an intended RFC status for this document.",
         )
     else:
         status = get_status(text)

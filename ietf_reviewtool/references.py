@@ -5,7 +5,7 @@ import re
 
 from .review import IetfReview
 from .util.fetch import fetch_meta, fetch_docs_in_last_call_text, fetch_dt
-from .util.text import untag, word_join, wrap_and_indent, basename
+from .util.text import untag, word_join, basename
 from .util.utils import duplicates, get_latest, die
 
 
@@ -73,11 +73,11 @@ def check_refs(
         )
 
     if in_text - both:
-        ref_list = wrap_and_indent(word_join(list(in_text - both)), width=review.width)
+        ref_list = word_join(list(in_text - both))
         review.comment(f"No reference entries found for: {ref_list}.")
 
     if both - in_text:
-        ref_list = wrap_and_indent(word_join(list(both - in_text)), width=review.width)
+        ref_list = word_join(list(both - in_text))
         review.nit(f"Uncited references: {ref_list}.")
 
     for rel, docs in rels.items():
@@ -104,10 +104,9 @@ def check_refs(
                 name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", doc)
             if not doc or not name:
                 log.debug(
-                    "No metadata available for %s reference %s (%s)",
+                    "No metadata available for %s reference %s",
                     kind,
                     tag,
-                    name,
                 )
                 if kind == "normative" and status.lower() not in [
                     "informational",

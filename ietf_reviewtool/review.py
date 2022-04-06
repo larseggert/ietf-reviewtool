@@ -16,49 +16,61 @@ class IetfReview:
 
     def __init__(self, width: int = 79):
         self.width = width
-        self._data = {"discuss": [], "comment": [], "nit": []}
+        self.__data = {"discuss": [], "comment": [], "nit": []}
 
-    def discuss(self, content: str) -> None:
+    def __add(self, content: str, kind: str, wrap: bool, end: str) -> None:
+        assert isinstance(content, str)
+        if wrap:
+            content = self.__wrap_para(content, end)
+        self.__data[kind].append(content)
+
+    def discuss(self, content: str, wrap: bool = True, end: str = "\n") -> None:
         "Add a discuss position to the review."
-        assert isinstance(content, str)
-        self._data["discuss"].append(content)
+        self.__add(content, "discuss", wrap, end)
 
-    def comment(self, content: str) -> None:
+    def comment(self, content: str, wrap: bool = True, end: str = "\n") -> None:
         "Add a comment to the review."
-        assert isinstance(content, str)
-        self._data["comment"].append(content)
+        self.__add(content, "comment", wrap, end)
 
-    def comment_bullets(self, header: str, bullets: list) -> None:
-        self._data["comment"].append(self.bulletize(header, bullets))
-
-    def nit(self, content: str) -> None:
+    def nit(self, content: str, wrap: bool = True, end: str = "\n") -> None:
         "Add a nit to the review."
-        assert isinstance(content, str)
-        self._data["nit"].append(content)
+        self.__add(content, "nit", wrap, end)
 
-    def nit_bullets(self, header: str, bullets: list) -> None:
-        self._data["nit"].append(self.bulletize(header, bullets))
+    def discuss_bullets(self, header: str, bullets: list[str], end: str = "\n") -> None:
+        "Add a discuss bullet list to the review."
+        content = self.__bulletize(header, bullets)
+        self.__add(content, "discuss", wrap=False, end=end)
+
+    def comment_bullets(self, header: str, bullets: list[str], end: str = "\n") -> None:
+        "Add a comment bullet list to the review."
+        content = self.__bulletize(header, bullets)
+        self.__add(content, "comment", wrap=False, end=end)
+
+    def nit_bullets(self, header: str, bullets: list[str], end: str = "\n") -> None:
+        "Add a nit bullet list to the review."
+        content = self.__bulletize(header, bullets)
+        self.__add(content, "nit", wrap=False, end=end)
 
     def __str__(self) -> str:
         out = []
-        for category, comments in self._data.items():
-            if not comments:
+        for category, content in self.__data.items():
+            if not content:
                 continue
-            out.append("-" * self.width)
+            out.append("\n" + "-" * self.width)
             out.append(category.upper())
-            out.append("-" * self.width)
+            out.append("-" * self.width + "\n")
             if self.boilerplate.get(category, None):
-                out.append(self.wrap_para(self.boilerplate[category], end="\n"))
-            out.extend(comments)
+                out.append(self.__wrap_para(self.boilerplate[category], end="\n"))
+            out.extend(content)
         return "\n".join(out)
 
     def __or__(self, other):
         for key, value in other.items():
-            if key in self._data:
-                self._data[key].extend(value)
+            if key in self.__data:
+                self.__data[key].extend(value)
         return self
 
-    def wrap_para(self, text: str, end: str = "\n\n") -> str:
+    def __wrap_para(self, text: str, end: str) -> str:
         """
         Return a wrapped version of the text, ending with end.
 
@@ -69,7 +81,7 @@ class IetfReview:
         """
         return textwrap.fill(text, width=self.width, break_on_hyphens=False) + end
 
-    def bulletize(self, header: str, bullets: list) -> str:
+    def __bulletize(self, header: str, bullets: list[str]) -> str:
         """
         Return a wrapped version of the text, ending with end, as a bullet item.
 
@@ -79,16 +91,15 @@ class IetfReview:
         @return     Wrapped version of text followed by end, formatted as bullet
                     item.
         """
-        out = [header]
+        out = [self.__wrap_para(header, end="\n")]
         for bullet in bullets:
             out.append(
-                textwrap.indent(
-                    textwrap.fill(
-                        " * " + bullet, self.width - 3, break_on_hyphens=False
-                    )
-                    + "\n\n"
-                    "   ",
-                    lambda line: not line.startswith(" * "),
+                textwrap.fill(
+                    bullet,
+                    width=self.width,
+                    initial_indent=" * ",
+                    subsequent_indent="   ",
+                    break_on_hyphens=False,
                 )
             )
-        return "\n".join(out)
+        return "\n".join(out) + "\n"

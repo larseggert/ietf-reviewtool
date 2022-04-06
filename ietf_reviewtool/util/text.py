@@ -2,7 +2,6 @@
 
 import logging
 import re
-import textwrap
 import urllib.parse
 
 import urlextract
@@ -304,26 +303,6 @@ def untag(tag: str) -> str:
     @return     Tag without angle brackets.
     """
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
-
-
-def wrap_and_indent(text: str, width: int = 50) -> str:
-    """
-    Wrap and indent a string if it is longer than width characters.
-
-    @param      text   The text to wrap and indent
-    @param      width  The width to wrap to
-
-    @return     Wrapped and indented text, or original text.
-    """
-    return (
-        "\n"
-        + textwrap.indent(
-            textwrap.fill(text, width=width - 5, break_on_hyphens=False),
-            "     ",
-        )
-        if len(text) > 50
-        else text
-    )
 
 
 def get_status(doc: str) -> str:
