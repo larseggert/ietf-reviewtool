@@ -13,10 +13,9 @@ on:
 jobs:
   upload:
     runs-on: ubuntu-latest
-    if: >
-      ${{ github.event.workflow_run.event == 'pull_request' }}
+    if: ${{ github.event.workflow_run.conclusion == "success" }}
     steps:
-      - name: 'Download artifacts'
+      - name: "Download artifacts"
         uses: actions/download-artifact@v3
         id: download
         with:
