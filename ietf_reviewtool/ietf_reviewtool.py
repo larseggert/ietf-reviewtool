@@ -55,11 +55,11 @@ from .util.utils import read, write
 log = logging.getLogger(__name__)
 
 
-TEST_NET_1 = ipaddress.ip_network("192.0.2.0/24")
-TEST_NET_2 = ipaddress.ip_network("198.51.100.0/24")
-TEST_NET_3 = ipaddress.ip_network("203.0.113.0/24")
-MCAST_TEST_NET = ipaddress.ip_network("233.252.0.0/24")
-TEST_NET_V6 = ipaddress.ip_network("2001:db8::/32")
+TEST_NET_1 = ipaddress.IPv4Network("192.0.2.0/24")
+TEST_NET_2 = ipaddress.IPv4Network("198.51.100.0/24")
+TEST_NET_3 = ipaddress.IPv4Network("203.0.113.0/24")
+MCAST_TEST_NET = ipaddress.IPv4Network("233.252.0.0/24")
+TEST_NET_V6 = ipaddress.IPv6Network("2001:db8::/32")
 
 
 class State:
@@ -154,7 +154,7 @@ def extract_urls_from_items(
         log.debug("Extracting URLs from %s", item)
         text = strip_pagination(read(item, log))
 
-        if text is not None:
+        if text:
             urls |= extract_urls(read(item, log), log, examples, common)
 
     for url in urls:
@@ -241,16 +241,17 @@ def strip_items(items: list, in_place: bool = False) -> None:
             continue
 
         text = strip_pagination(read(item, log))
+        if not text:
+            return
 
-        if text is not None:
-            if not in_place:
-                item += ".stripped"
-                if os.path.isfile(item):
-                    log.warning("%s exists, skipping", item)
-                    continue
+        if not in_place:
+            item += ".stripped"
+            if os.path.isfile(item):
+                log.warning("%s exists, skipping", item)
+                continue
 
-            log.debug("Saving stripped version as %s", item)
-            write(text, item)
+        log.debug("Saving stripped version as %s", item)
+        write(text, item)
 
 
 def thank_art_reviewer(
@@ -448,7 +449,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
             continue
         if reachability[url] is not None:
             test_url = re.sub(r"^\w+:", r"https:", url)
-            if fetch_url(test_url, log, verbose, "HEAD") is not None:
+            if fetch_url(test_url, log, verbose, "HEAD"):
                 result.append(url)
 
     if result:

@@ -5,7 +5,9 @@ import re
 from .docposition import DocPosition
 
 
-def fmt_nit(changed: list, indicator: list, doc_pos: DocPosition) -> str:
+def fmt_nit(
+    changed: dict[str, list[str]], indicator: dict[str, list[str]], doc_pos: DocPosition
+) -> str:
     """
     Format a nit.
 

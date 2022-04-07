@@ -15,7 +15,7 @@ def get_current_agenda(datatracker: str, log: logging.Logger) -> dict:
     @return     The current agenda as a dict.
     """
     agenda = fetch_url(datatracker + "/iesg/agenda/agenda.json", log, use_cache=False)
-    if agenda is None:
+    if not agenda:
         return {}
     return json.loads(agenda)
 

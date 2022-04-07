@@ -3,7 +3,7 @@
 import logging
 import re
 
-import num2words
+import num2words  # type: ignore
 
 from .review import IetfReview
 from .util.fetch import fetch_meta

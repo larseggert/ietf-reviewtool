@@ -4,9 +4,7 @@ import logging
 import re
 import urllib.parse
 
-import urlextract
-
-from .docposition import SECTION_PATTERN
+import urlextract  # type: ignore
 
 
 def normalize_ws(string: str) -> str:
@@ -22,13 +20,12 @@ def normalize_ws(string: str) -> str:
 
 def word_join(words: list, ox_comma=True, prefix="", suffix="") -> str:
     """
-    Join list items using commas and "and", optionally each prefixed by
-    something.
+    Join list items using commas and "and", optionally each prefixed by something.
 
-    @param      words         The words to join
-    @param      ox_comma      Whether to use the oxford comma
-    @param      prefix        A prefix to use for each word
-    @param      suffix        A suffix to use for each word
+    @param      words     The words to join
+    @param      ox_comma  Whether to use the oxford comma
+    @param      prefix    A prefix to use for each word
+    @param      suffix    A suffix to use for each word
 
     @return     String of joined words
     """
@@ -100,6 +97,7 @@ def extract_urls(
     Return a list of URLs in a text string.
 
     @param      text      The text to extract URLs from
+    @param      log       The log
     @param      examples  Include example URLs
     @param      common    Include URLs that are common in IETF documents
 
@@ -160,9 +158,9 @@ def extract_urls(
 
 def strip_pagination(text: str) -> str:
     """
-    Strip headers and footers, end-of-line whitespace and CR/LF, similar to the
-    rfcstrip tool (https://trac.tools.ietf.org/tools/rfcstrip/) from which the
-    regexs used below were originally adopted.
+    Strip headers and footers, end-of-line whitespace and CR/LF, similar to the rfcstrip
+    tool (https://trac.tools.ietf.org/tools/rfcstrip/) from which the regexs used below
+    were originally adopted.
 
     @param      text  The text of an RFC or Internet-Draft
 
@@ -237,8 +235,8 @@ def untag(tag: str) -> str:
 
 def basename(item: str) -> str:
     """
-    Return the base name of a given item by stripping the path, the version
-    information and the txt suffix.
+    Return the base name of a given item by stripping the path, the version information
+    and the txt suffix.
 
     @param      item  The item to return the base name for
 

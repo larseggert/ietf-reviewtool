@@ -44,7 +44,7 @@ def check_refs(
     for kind in ["normative", "informative"]:
         if not doc.references[kind]:
             continue
-        print(doc.references)
+
         tags, tgts = zip(*doc.references[kind])
         dupes = duplicates(tags)
         if dupes:

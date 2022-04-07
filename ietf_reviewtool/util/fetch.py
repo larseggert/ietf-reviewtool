@@ -7,7 +7,9 @@ import os
 import re
 import urllib.request
 
-import appdirs
+import appdirs  # type: ignore
+import base64
+import gzip
 import requests
 import requests_cache
 
@@ -60,7 +62,7 @@ def fetch_url(
                 return response.read()
         except urllib.error.URLError as err:
             log.debug("%s -> %s", url, err)
-            return None
+            return ""
 
     while True:
         try:
@@ -102,7 +104,7 @@ def fetch_url(
                 headers["Range"] = "bytes=0-100"
                 method = "GET"
                 continue
-            return None
+            return ""
         return response.text
 
 
@@ -123,10 +125,10 @@ def fetch_dt(datatracker: str, query: str, log: logging.Logger) -> dict:
     else:
         query += "?format=json"
     content = fetch_url(datatracker + query, log)
-    if content is not None:
+    if content:
         result = json.loads(content)
         return result["objects"] if "objects" in result else result
-    return None
+    return {}
 
 
 def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
@@ -144,7 +146,7 @@ def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
         datatracker, "doc/writeupdocevent/?doc__name=" + basename(item), log
     )
     if not doc_events:
-        return None
+        return ""
 
     events = {
         e["type"]
@@ -171,10 +173,10 @@ def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
         else:
             log.debug("no %s for %s", evt, item)
 
-    return text if len(events) == 1 else None
+    return text if len(events) == 1 else ""
 
 
-def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> list:
+def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> set:
     """
     Fetches IDs and RFCs mentioned in the last-call message. The *assumption*
     is that they are all called-out downrefs.
@@ -185,7 +187,7 @@ def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> list:
     """
     last_call = read("last_call_text/" + name, log)
     if not last_call:
-        return []
+        return set()
     docs = re.findall(
         r"rfc\s*\d+|draft-[-a-z\d_]+",
         last_call,
@@ -210,7 +212,7 @@ def fetch_meta(datatracker: str, doc: str, log: logging.Logger) -> dict:
     meta = fetch_url(url, log)
     if not meta:
         log.info("No metadata available for %s", doc)
-        return None
+        return {}
     return json.loads(meta)
 
 
@@ -258,8 +260,8 @@ def get_items(
 
         log.debug("Getting %s", item)
         cache = None
-        text = None
-        url = None
+        text = ""
+        url = ""
         match = re.search(r"^(conflict-review|status-change)-", item)
         if item.startswith("draft-"):
             url = "https://ietf.org/archive/id/" + file_name
@@ -303,7 +305,7 @@ def get_items(
         # else:
         #     die(f"Unknown item type: {item}", log)
 
-        if cache is not None:
+        if cache:
             cache_file = os.path.join(cache, file_name)
             if os.path.isfile(cache_file):
                 log.debug("Using cached %s", item)
@@ -311,10 +313,10 @@ def get_items(
             else:
                 log.debug("No cached copy of %s in %s", item, cache)
 
-        if text is None and url is not None:
+        if not text and url:
             text = fetch_url(url, log)
 
-        if text is not None:
+        if text:
             if file_name.endswith(".xml") and extract_md:
                 # try and extract markdown
                 mkd = re.search(

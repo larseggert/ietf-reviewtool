@@ -15,6 +15,7 @@ SECTION_PATTERN = re.compile(
 
 
 class DocPosition:
+    "Class to maintain the current position in a document."
     para_num: int
     sec_title: str
     had_non_numbered_sec: bool

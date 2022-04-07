@@ -3,7 +3,7 @@
 import math
 import re
 
-import language_tool_python
+import language_tool_python  # type: ignore
 
 from .review import IetfReview
 from .util.text import unfold
