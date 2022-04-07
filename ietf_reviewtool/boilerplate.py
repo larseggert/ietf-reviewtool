@@ -2,18 +2,19 @@
 
 import re
 
+from .doc import Doc
 from .review import IetfReview
 from .util.text import normalize_ws, unfold, word_join
-from .doc import Doc
 
 
 def check_tlp(doc: Doc, review: IetfReview) -> None:
     """
     Check the boilerplate against the Trust Legal Provisions (TLP).
 
-    @param      text    The document text
-    @param      status  The standards level of this document
+    @param      doc     The document
     @param      review  The IETF Review document to add comments to
+
+    @return     { description_of_the_return_value }
     """
     text = unfold(doc.orig)
     if re.search(
@@ -43,9 +44,10 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
     """
     Check the RFC2119/RFC8174 boilerplate in the document.
 
-    @param      text    The document text
-    @param      status  The standards level of this document
+    @param      doc     The document
     @param      review  The IETF Review document to add comments to
+
+    @return     { description_of_the_return_value }
     """
     uses_keywords = set(re.findall(KEYWORDS_PATTERN, doc.orig))
     has_8174_boilerplate = set(re.findall(BOILERPLATE_8174_PATTERN, doc.orig))
@@ -57,13 +59,13 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
         used_keywords = []
         for word in set(uses_keywords):
             used_keywords.append(normalize_ws(word))
-        used_keywords = word_join(used_keywords, prefix='"', suffix='"')
+        used_keywords_str = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
 
         if doc.status.lower() in ["informational", "experimental"]:
             review.comment(
                 f"Document has {doc.status} status, but uses the RFC2119 "
-                f"{kw_text} {used_keywords}. Check if this is really "
+                f"{kw_text} {used_keywords_str}. Check if this is really "
                 f"necessary?"
             )
 
@@ -296,7 +298,7 @@ ID_GUIDELINES_PATTERNS = [
     ),
 ]
 
-COPYRIGHT_ALT_STREAMS = r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+
+COPYRIGHT_ALT_STREAMS_PART = r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+
         and\s+the\s+persons\s+identified\s+as\s+the\s+document\s+authors\.\s+
         All\s+rights\s+reserved\.\s+
         This\s+document\s+is\s+subject\s+to\s+BCP\s*78\s+and\s+the\s+IETF\s+
@@ -308,7 +310,7 @@ COPYRIGHT_ALT_STREAMS = r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+
         to\s+this\s+document\.\s*"""
 
 COPYRIGHT_IETF = re.compile(
-    COPYRIGHT_ALT_STREAMS
+    COPYRIGHT_ALT_STREAMS_PART
     + r"""Code\s+Components\s+extracted\s+from\s+
         this\s+document\s+must\s+include\s+(Simplified|Revised)\s+BSD\s+
         License\s+text\s+as\s+described\s+in\s+Section\s+4\.e\s+of\s+
@@ -319,7 +321,7 @@ COPYRIGHT_IETF = re.compile(
 )
 
 COPYRIGHT_ALT_STREAMS = re.compile(
-    COPYRIGHT_ALT_STREAMS,
+    COPYRIGHT_ALT_STREAMS_PART,
     re.VERBOSE,
 )
 

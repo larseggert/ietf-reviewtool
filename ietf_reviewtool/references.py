@@ -3,11 +3,11 @@
 import logging
 import re
 
+from .doc import Doc
 from .review import IetfReview
 from .util.fetch import fetch_meta, fetch_docs_in_last_call_text, fetch_dt
 from .util.text import untag, word_join, basename
 from .util.utils import duplicates, get_latest, die
-from .doc import Doc
 
 
 def check_refs(
@@ -20,8 +20,8 @@ def check_refs(
     Check the references.
 
     @param      doc          The document
-    @param      datatracker  The datatracker URL to use
     @param      review       The IETF review to comment upon
+    @param      datatracker  The datatracker URL to use
     @param      log          The log to write to
 
     @return     { description_of_the_return_value }
@@ -49,14 +49,14 @@ def check_refs(
         dupes = duplicates(tags)
         if dupes:
             review.nit(
-                f"Duplicate {kind} references: {word_join(dupes)}.",
+                f"Duplicate {kind} references: {word_join(list(dupes))}.",
             )
 
         dupes = duplicates(tgts)
         if dupes:
             tags = [t[0] for t in doc.references[kind] if t[1] in dupes]
             review.nit(
-                f"Duplicate {kind} references to: {word_join(dupes)}.",
+                f"Duplicate {kind} references to: {word_join(list(dupes))}.",
             )
 
     norm = set(e[0] for e in doc.references["normative"])
@@ -118,12 +118,12 @@ def check_refs(
             draft_components = re.search(r"^(draft-.*)-(\d{2,})$", name.group(0))
             rev = None
             if draft_components:
-                name = draft_components.group(1)
+                docname = draft_components.group(1)
                 rev = draft_components.group(2)
             else:
-                name = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
-            ref_meta = fetch_meta(datatracker, basename(name), log)
-            display_name = re.sub(r"rfc", r"RFC", name)
+                docname = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
+            ref_meta = fetch_meta(datatracker, basename(docname), log)
+            display_name = re.sub(r"rfc", r"RFC", docname)
 
             latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
             if latest and latest["rev"] and rev and latest["rev"] > rev:
@@ -134,7 +134,7 @@ def check_refs(
                     )
                 else:
                     review.nit(
-                        f"Document references {name}-{rev}, but "
+                        f"Document references {docname}-{rev}, but "
                         f"-{latest['rev']} is the latest "
                         f"available revision.",
                     )
@@ -145,8 +145,8 @@ def check_refs(
                 )
                 if (
                     is_downref(level, kind, ref_level, log)
-                    and name not in downrefs_in_registry
-                    and name not in docs_in_lc
+                    and docname not in downrefs_in_registry
+                    and docname not in docs_in_lc
                 ):
                     if ref_level is None:
                         review.comment(
@@ -169,7 +169,7 @@ def check_refs(
 
             obsoleted_by = fetch_dt(
                 datatracker,
-                "doc/relateddocument/?relationship__slug=obs&target__name=" + name,
+                "doc/relateddocument/?relationship__slug=obs&target__name=" + docname,
                 log,
             )
             if obsoleted_by:

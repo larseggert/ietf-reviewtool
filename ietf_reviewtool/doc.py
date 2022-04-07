@@ -1,17 +1,18 @@
 """ietf-reviewtool document  module"""
 
-import os
-import tempfile
 import logging
+import os
 import re
+import tempfile
 
-from .util.utils import read
+from .util.docposition import SECTION_PATTERN
 from .util.fetch import get_items, fetch_meta
 from .util.text import basename, unfold, untag, extract_urls
-from .util.docposition import SECTION_PATTERN
+from .util.utils import read
 
 
 class Doc:
+    "Class to handle a document to review."
     name: str
     status: str
     orig: str
@@ -61,11 +62,11 @@ class Doc:
 
         # extract relationships
         self.relationships = {}
-        pat = {"updates": r"[Uu]pdates", "obsoletes": r"[Oo]bsoletes"}
+        rel_pat = {"updates": r"[Uu]pdates", "obsoletes": r"[Oo]bsoletes"}
         for rel in ["updates", "obsoletes"]:
             match = re.search(
                 r"^"
-                + pat[rel]
+                + rel_pat[rel]
                 + r":\s*((?:(?:RFC\s*)?\d{3,},?\s*)+)"
                 + r"(?:.*[\n\r\s]+((?:(?:RFC\s*)?\d{3,},?\s*)+)?)?",
                 self.orig,
@@ -132,13 +133,13 @@ class Doc:
         for part in ["informative", "normative"]:
             self.references[part] = []
             for ref in refs[part]:
-                ref_text = re.search(
+                ref_match = re.search(
                     r"\s*" + re.escape(ref) + r"\s+((?:[^\n][\n]?)+)\n",
                     parts[part],
                     re.DOTALL,
                 )
-                if ref_text:
-                    ref_text = unfold(ref_text.group(0))
+                if ref_match:
+                    ref_text = unfold(ref_match.group(0))
                     found = False
 
                     for pat in [r"(draft-[-a-z\d_.]+)", r"((?:RFC|rfc)\d+)"]:
@@ -149,7 +150,7 @@ class Doc:
                             break
 
                     if not found:
-                        urls = extract_urls(ref_text, True, True)
+                        urls = extract_urls(ref_text, log, True, True)
                         self.references[part].append(
                             (ref, urls.pop() if urls else None)
                         )

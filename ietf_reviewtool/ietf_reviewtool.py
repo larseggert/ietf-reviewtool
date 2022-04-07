@@ -44,7 +44,6 @@ from .doc import Doc
 from .util.fetch import fetch_url, fetch_dt, fetch_init_cache, get_items
 from .util.text import (
     word_join,
-    unfold,
     extract_ips,
     extract_urls,
     strip_pagination,
@@ -104,7 +103,9 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
     help="Wrap the review to this character width.",
 )
 @click.pass_context
-def cli(ctx: object, datatracker: str, verbose: int, default: bool, width: int) -> None:
+def cli(
+    ctx: click.Context, datatracker: str, verbose: int, default: bool, width: int
+) -> None:
     """
     Do some initialization
 
@@ -209,6 +210,7 @@ def fetch(
     """
     get_items(
         items,
+        log,
         state.datatracker,
         strip,
         fetch_writeups,
@@ -331,14 +333,14 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
     for ip_literal in extract_ips(doc.orig):
         if "/" in ip_literal:
             try:
-                result.append(ipaddress.ip_network(ip_literal))
+                result.append(str(ipaddress.ip_network(ip_literal)))
             except ValueError:
-                faulty.append(str(ip_literal))
+                faulty.append(str(str(ip_literal)))
         else:
             try:
-                result.append(ipaddress.ip_address(ip_literal))
+                result.append(str(ipaddress.ip_address(ip_literal)))
             except ValueError:
-                faulty.append(str(ip_literal))
+                faulty.append(str(str(ip_literal)))
 
     if faulty:
         msg = "Unparsable possible IP "
@@ -459,7 +461,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
         )
 
 
-def check_xml(doc: Doc, review: IetfReview) -> dict:
+def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     Check any XML in the document for issues
 
@@ -489,7 +491,6 @@ def check_xml(doc: Doc, review: IetfReview) -> dict:
         try:
             xml.etree.ElementTree.fromstring(text)
         except xml.etree.ElementTree.ParseError as err:
-            text = text.splitlines(keepends=True)
             print(text[err.position[0] - 2])
             review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
 
@@ -640,7 +641,7 @@ def review_items(
             check_urls(doc, review, verbose)
 
         if chk_inclusiv:
-            check_inclusivity(unfold(doc.orig), review, log, verbose)
+            check_inclusivity(doc, review, log, verbose)
 
         if chk_ips:
             check_ips(doc, review)

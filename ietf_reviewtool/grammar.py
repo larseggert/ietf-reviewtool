@@ -6,8 +6,8 @@ import re
 import language_tool_python  # type: ignore
 
 from .review import IetfReview
-from .util.text import unfold
 from .util.docposition import DocPosition
+from .util.text import unfold
 
 
 def check_grammar(
@@ -15,12 +15,16 @@ def check_grammar(
     grammar_skip_rules: str,
     review: IetfReview,
     show_rule_id: bool = False,
-) -> dict:
+) -> None:
     """
     Check document grammar.
 
-    @param      text   The document text
-    @param      review The IETF review to comment upon
+    @param      text                The document text
+    @param      grammar_skip_rules  The grammar rules to skip
+    @param      review              The IETF review to comment upon
+    @param      show_rule_id        Whether to show rule names in messages
+
+    @return     { description_of_the_return_value }
     """
     issues = [
         i

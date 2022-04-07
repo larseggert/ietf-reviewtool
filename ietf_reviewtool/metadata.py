@@ -5,9 +5,9 @@ import re
 
 import num2words  # type: ignore
 
+from .doc import Doc
 from .review import IetfReview
 from .util.fetch import fetch_meta
-from .doc import Doc
 from .util.text import word_join
 
 
@@ -105,8 +105,8 @@ def check_meta(
 
 def relationship_ok(status: str, level: str) -> bool:
     """
-    Check if a document with the given intended status can have a relationship
-    with a document of the given level.
+    Check if a document with the given intended status can have a relationship with a
+    document of the given level.
 
     @param      status  The intended status of a document
     @param      level   The level of a document

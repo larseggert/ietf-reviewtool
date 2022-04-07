@@ -1,6 +1,8 @@
-import textwrap
+"""IETF review class"""
+
 import difflib
 import re
+import textwrap
 
 from .doc import Doc
 from .util.docposition import DocPosition
@@ -55,6 +57,7 @@ def strip_nits_from_diff(diff: list) -> list:
 
 
 class IetfReview:
+    "Class to handle an IETF document review."
     boilerplate = {
         "nit": (
             "All comments below are about very minor potential issues "
@@ -69,7 +72,7 @@ class IetfReview:
 
     def __init__(self, doc: Doc, width: int = 79):
         self.width = width
-        self.__data = {"discuss": [], "comment": [], "nit": []}
+        self.__data: dict[str, list[str]] = {"discuss": [], "comment": [], "nit": []}
 
         diff = list(
             difflib.ndiff(
@@ -175,8 +178,8 @@ class IetfReview:
 
         @return     None
         """
-        changed = {"+": [], "-": []}
-        indicator = {"+": [], "-": []}
+        changed: dict[str, list[str]] = {"+": [], "-": []}
+        indicator: dict[str, list[str]] = {"+": [], "-": []}
         doc_pos = DocPosition()
         prev = None
 
@@ -200,15 +203,15 @@ class IetfReview:
 
             elif kind in ["-"]:  # this would catch nits: ["+", "-"]:
                 changed[kind].append(cur)
-                indicator[kind].append(None)
+                indicator[kind].append("")
 
             elif kind == "-" and nxt_kind == "+":
                 changed[kind].append(cur)
-                indicator[kind].append(None)
+                indicator[kind].append("")
 
             elif kind == "+" and prev == "-":
                 changed[kind].append(cur)
-                indicator[kind].append(None)
+                indicator[kind].append("")
 
             elif changed["-"] or changed["+"]:
                 self.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
@@ -232,7 +235,7 @@ class IetfReview:
         @param      review  IETF Review object.
         """
         doc_pos = DocPosition()
-        item = {}
+        item: dict = {}
 
         for num, cur in enumerate(diff):
             nxt = diff[num + 1] if num < len(diff) - 1 else None

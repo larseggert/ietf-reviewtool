@@ -11,6 +11,7 @@ def get_current_agenda(datatracker: str, log: logging.Logger) -> dict:
     Download and the current IESG telechat agenda in JSON format.
 
     @param      datatracker  The datatracker URL to use
+    @param      log          The log
 
     @return     The current agenda as a dict.
     """
@@ -22,8 +23,7 @@ def get_current_agenda(datatracker: str, log: logging.Logger) -> dict:
 
 def get_items_on_agenda(agenda: dict) -> list:
     """
-    Given an IESG telechat agenda dict, return the list of items that are on
-    it.
+    Given an IESG telechat agenda dict, return the list of items that are on it.
 
     @param      agenda  An agenda dict
 

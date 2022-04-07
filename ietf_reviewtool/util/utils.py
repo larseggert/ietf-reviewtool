@@ -7,7 +7,7 @@ import sys
 import charset_normalizer
 
 
-def die(msg: list, log: logging.Logger, err: int = 1) -> None:
+def die(msg: str, log: logging.Logger, err: int = 1) -> None:
     """
     Print a message and exit with an error code.
 
