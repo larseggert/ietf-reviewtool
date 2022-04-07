@@ -5,19 +5,24 @@ import logging
 import re
 import yaml
 
+from .doc import Doc
 from .review import IetfReview
 from .util.fetch import fetch_url
-from .util.text import word_join
+from .util.text import word_join, unfold
 
 
 def check_inclusivity(
-    text: str, review: IetfReview, log: logging.Logger, verbose: bool = False
+    doc: Doc, review: IetfReview, log: logging.Logger, verbose: bool = False
 ) -> None:
     """
     Check document terminology for potential inclusivity issues.
 
-    @param      text   The document text
-    @param      review The IETF Review to make comments upon
+    @param      doc      The document
+    @param      review   The IETF Review to make comments upon
+    @param      log      The log
+    @param      verbose  The verbose
+
+    @return     { description_of_the_return_value }
     """
     isb_url = (
         # "file:///Users/lars/Documents/Code/terminology/"
@@ -35,9 +40,9 @@ def check_inclusivity(
     for name, data in rules["rules"].items():
         for pattern in data["regex"]:
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
-            hits = re.findall(pattern, text, flags=re.IGNORECASE)
-            if hits:
-                hits = set(map(str.lower, itertools.chain(*hits)))
+            matches = re.findall(pattern, unfold(doc.orig), flags=re.IGNORECASE)
+            if matches:
+                hits = set(map(str.lower, itertools.chain(*matches)))
                 result[name] = (
                     [hit for hit in hits if hit != ""],
                     pattern,

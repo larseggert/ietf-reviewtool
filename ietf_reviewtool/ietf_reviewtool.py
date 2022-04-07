@@ -21,16 +21,13 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
-import base64
 import difflib
-import gzip
 import html
 import ipaddress
 import json
 import logging
 import os
 import re
-import tempfile
 import xml.etree.ElementTree
 
 import click
@@ -42,26 +39,14 @@ from .inclusive import check_inclusivity
 from .metadata import check_meta
 from .references import check_refs
 from .review import IetfReview
+from .doc import Doc
 
-from .util.fetch import (
-    fetch_url,
-    fetch_dt,
-    fetch_meta,
-    fetch_init_cache,
-    get_writeups,
-)
-from .util.format import fmt_nit, fmt_comment
+from .util.fetch import fetch_url, fetch_dt, fetch_init_cache, get_items
 from .util.text import (
     word_join,
-    unfold,
     extract_ips,
     extract_urls,
-    basename,
     strip_pagination,
-    section_and_paragraph,
-    get_status,
-    get_relationships,
-    extract_refs,
 )
 from .util.utils import read, write
 
@@ -69,11 +54,11 @@ from .util.utils import read, write
 log = logging.getLogger(__name__)
 
 
-TEST_NET_1 = ipaddress.ip_network("192.0.2.0/24")
-TEST_NET_2 = ipaddress.ip_network("198.51.100.0/24")
-TEST_NET_3 = ipaddress.ip_network("203.0.113.0/24")
-MCAST_TEST_NET = ipaddress.ip_network("233.252.0.0/24")
-TEST_NET_V6 = ipaddress.ip_network("2001:db8::/32")
+TEST_NET_1 = ipaddress.IPv4Network("192.0.2.0/24")
+TEST_NET_2 = ipaddress.IPv4Network("198.51.100.0/24")
+TEST_NET_3 = ipaddress.IPv4Network("203.0.113.0/24")
+MCAST_TEST_NET = ipaddress.IPv4Network("233.252.0.0/24")
+TEST_NET_V6 = ipaddress.IPv6Network("2001:db8::/32")
 
 
 class State:
@@ -118,7 +103,9 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
     help="Wrap the review to this character width.",
 )
 @click.pass_context
-def cli(ctx: object, datatracker: str, verbose: int, default: bool, width: int) -> None:
+def cli(
+    ctx: click.Context, datatracker: str, verbose: int, default: bool, width: int
+) -> None:
     """
     Do some initialization
 
@@ -168,7 +155,7 @@ def extract_urls_from_items(
         log.debug("Extracting URLs from %s", item)
         text = strip_pagination(read(item, log))
 
-        if text is not None:
+        if text:
             urls |= extract_urls(read(item, log), log, examples, common)
 
     for url in urls:
@@ -223,135 +210,13 @@ def fetch(
     """
     get_items(
         items,
+        log,
         state.datatracker,
         strip,
         fetch_writeups,
         fetch_xml,
         extract_markdown,
     )
-
-
-def get_items(
-    items: list,
-    datatracker: str,
-    strip: bool = True,
-    get_writeup=False,
-    get_xml=True,
-    extract_md=True,
-) -> list:
-    """
-    Download named items into files of the same name in the current directory.
-    Does not overwrite existing files. Names need to include the revision, and
-    may or may not include the ".txt" suffix.
-
-    @param      items        The items to download
-    @param      datatracker  The datatracker URL to use
-    @param      strip        Whether to run strip() on the downloaded item
-    @param      get_writeup  Whether to download associated write-ups
-    @param      get_xml      Whether to download XML sources
-    @param      extract_md   Whether to extract Markdown from XML sources
-
-    @return     List of file names written or existing
-    """
-    result = []
-    for item in items:
-        do_strip = strip
-        file_name = item
-        if not file_name.endswith(".txt") and not file_name.endswith(".xml"):
-            file_name += ".txt"
-
-        if get_writeup:
-            get_writeups(datatracker, item, log)
-
-        if get_xml and item.startswith("draft-") and file_name.endswith(".txt"):
-            # also try and get XML source
-            items.append(re.sub(r"\.txt$", ".xml", file_name))
-
-        if os.path.isfile(file_name):
-            log.warning("%s exists, skipping", file_name)
-            result.append(file_name)
-            continue
-
-        log.debug("Getting %s", item)
-        cache = None
-        text = None
-        url = None
-        match = re.search(r"^(conflict-review|status-change)-", item)
-        if item.startswith("draft-"):
-            url = "https://ietf.org/archive/id/" + file_name
-            cache = os.getenv("IETF_IDS")
-        elif item.startswith("rfc"):
-            url = "https://rfc-editor.org/rfc/" + file_name
-            cache = os.getenv("IETF_RFCS")
-        elif item.startswith("charter-"):
-            url_pattern = re.sub(
-                r"(.*)(((-\d+){2}).txt)$", r"\1/withmilestones\2", file_name
-            )
-            url = datatracker + "/doc/" + url_pattern
-            # the charters in rsync don't have milestones, can't use
-            # cache = os.getenv("IETF_CHARTERS")
-            do_strip = False
-        elif match:
-            which = match[1]
-            doc = re.sub(which + r"-(.*)", r"draft-\1", item)
-            text = get_writeups(datatracker, doc, log)
-            # in-progress conflict-reviews/status-changes are not in the cache
-            doc = basename(doc)
-            slug = "conflrev" if which == "conflict-review" else "statchg"
-            target = fetch_dt(
-                datatracker,
-                f"doc/relateddocument/?relationship__slug={slug}&target__name=" + doc,
-                log,
-            )
-            if not target:
-                log.warning("cannot find target for %s", doc)
-                continue
-            docalias = fetch_dt(datatracker, target[0]["target"], log)
-            if not docalias:
-                log.warning("cannot find docalias for %s", target[0]["target"])
-                continue
-            doc = fetch_dt(datatracker, docalias["document"], log)
-            if not doc:
-                log.warning("cannot find doc for %s", docalias["document"])
-                continue
-            items.append(f"{doc['name']}-{doc['rev']}.txt")
-            do_strip = False
-        # else:
-        #     die(f"Unknown item type: {item}", log)
-
-        if cache is not None:
-            cache_file = os.path.join(cache, file_name)
-            if os.path.isfile(cache_file):
-                log.debug("Using cached %s", item)
-                text = read(cache_file, log)
-            else:
-                log.debug("No cached copy of %s in %s", item, cache)
-
-        if text is None and url is not None:
-            text = fetch_url(url, log)
-
-        if text is not None:
-            if file_name.endswith(".xml") and extract_md:
-                # try and extract markdown
-                mkd = re.search(
-                    r"<!--\s*##markdown-source:(.*)-->",
-                    text,
-                    flags=re.DOTALL,
-                )
-                if mkd:
-                    log.debug("Extracting Markdown source of %s", file_name)
-                    mkd_file = re.sub(r"\.xml$", ".md", file_name)
-                    with open(mkd_file, "wb") as file:
-                        file.write(gzip.decompress(base64.b64decode(mkd[1])))
-                    result.append(mkd_file)
-
-            elif do_strip:
-                log.debug("Stripping %s", item)
-                text = strip_pagination(text)
-            write(text, file_name)
-            result.append(file_name)
-
-    return result
 
 
 @click.command("strip", help="Strip headers, footers and pagination from items.")
@@ -378,216 +243,246 @@ def strip_items(items: list, in_place: bool = False) -> None:
             continue
 
         text = strip_pagination(read(item, log))
+        if not text:
+            return
 
-        if text is not None:
-            if not in_place:
-                item += ".stripped"
-                if os.path.isfile(item):
-                    log.warning("%s exists, skipping", item)
-                    continue
-
-            log.debug("Saving stripped version as %s", item)
-            write(text, item)
-
-
-def gather_nits(diff: list, review: IetfReview) -> list:
-    """
-    Return a list of prefixed nits from the current diff.
-
-    @param      diff  The diff to extract nits from
-
-    @return     A list of prefixed nits.
-    """
-    changed = {"+": [], "-": []}
-    indicator = {"+": [], "-": []}
-    para_sec = None
-    prev = None
-
-    for num, cur in enumerate(diff):
-        # print(cur, end="")
-        kind = cur[0]
-
-        nxt = diff[num + 1] if num < len(diff) - 1 else None
-        nxt_kind = nxt[0] if nxt else None
-
-        if cur in ["+ \n", "- \n"]:
-            prev = kind
-            if nxt:
+        if not in_place:
+            item += ".stripped"
+            if os.path.isfile(item):
+                log.warning("%s exists, skipping", item)
                 continue
 
-        if kind in ["+", "-"] and nxt_kind == "?":
-            changed[kind].append(cur)
-
-        elif kind == "?" and prev in ["+", "-"]:
-            indicator[prev].append(cur)
-
-        elif kind in ["-"]:  # this would catch nits: ["+", "-"]:
-            changed[kind].append(cur)
-            indicator[kind].append(None)
-
-        elif kind == "-" and nxt_kind == "+":
-            changed[kind].append(cur)
-            indicator[kind].append(None)
-
-        elif kind == "+" and prev == "-":
-            changed[kind].append(cur)
-            indicator[kind].append(None)
-
-        elif changed["-"] or changed["+"]:
-            review.nit(fmt_nit(changed, indicator, para_sec), wrap=False)
-
-        elif not nxt and kind != " ":
-            changed[kind].append(cur)
-
-        if nxt:
-            para_sec = section_and_paragraph(nxt, cur, para_sec)
-
-        prev = kind
-
-    if changed["-"] or changed["+"]:
-        review.nit(fmt_nit(changed, indicator, para_sec), wrap=False)
+        log.debug("Saving stripped version as %s", item)
+        write(text, item)
 
 
-def strip_nits_from_diff(diff: list) -> list:
-    """
-    Return a version of the passed diff with all lines related to nits removed.
+def thank_art_reviewer(
+    doc: Doc, review: IetfReview, thank_art: str, datatracker: str
+) -> None:
+    art_reviews = fetch_dt(
+        datatracker,
+        "doc/reviewassignmentdocevent/?doc__name=" + doc.name,
+        log,
+    )
+    if not art_reviews:
+        log.warning("Could not fetch ART reviews for %s", doc.name)
+        return
 
-    @param      diff  The diff to strip nits from
+    for rev_assignment in art_reviews:
+        if rev_assignment["type"] != "closed_review_assignment":
+            continue
 
-    @return     A diff with all nits removed.
-    """
-    prev = None
-    continue_again = False
+        assignment = fetch_dt(
+            datatracker,
+            rev_assignment["review_assignment"],
+            log,
+        )
+
+        if not assignment:
+            log.warning("Could not fetch review_assignment for %s", doc.name)
+            continue
+
+        reviewer = fetch_dt(datatracker, assignment["reviewer"], log)
+
+        if not reviewer:
+            log.warning("Could not fetch reviewer for %s", doc.name)
+            continue
+
+        reviewer = fetch_dt(datatracker, reviewer["person"], log)
+
+        if not reviewer:
+            log.warning("Could not fetch reviewer for %s", doc.name)
+            continue
+
+        if assignment["state"].endswith("rejected/"):
+            log.debug("Review for %s was rejected", doc.name)
+            continue
+
+        if assignment["state"].endswith("no-response/"):
+            log.debug("Review for %s was not completed", doc.name)
+            continue
+
+        if assignment["state"].endswith("withdrawn/"):
+            log.debug("Review for %s was withdrawn", doc.name)
+            continue
+
+        art_review = fetch_dt(datatracker, assignment["review"], log)
+
+        if not art_review:
+            log.warning("Could not fetch review for %s", doc.name)
+            continue
+
+        group = fetch_dt(datatracker, art_review["group"], log)
+
+        if not group:
+            log.warning("Could not fetch ART for %s", doc.name)
+            continue
+
+        if group["acronym"].lower() == thank_art.lower():
+            review.comment(
+                "Thanks to "
+                + (reviewer["name_from_draft"] or reviewer["name"])
+                + f" for their {group['name']} review "
+                f"({art_review['external_url']})."
+            )
+
+
+def check_ips(doc: Doc, review: IetfReview) -> None:
     result = []
+    faulty = []
+    for ip_literal in extract_ips(doc.orig):
+        if "/" in ip_literal:
+            try:
+                result.append(str(ipaddress.ip_network(ip_literal)))
+            except ValueError:
+                faulty.append(str(str(ip_literal)))
+        else:
+            try:
+                result.append(str(ipaddress.ip_address(ip_literal)))
+            except ValueError:
+                faulty.append(str(str(ip_literal)))
 
-    for num, cur in enumerate(diff):
-        if continue_again:
-            continue_again = False
+    if faulty:
+        msg = "Unparsable possible IP "
+        if len(faulty) > 1:
+            msg += "blocks or addresses: "
+        else:
+            msg += "block or address: "
+        msg += word_join(faulty, prefix='"', suffix='"') + "."
+        review.nit(msg)
+
+    faulty = []
+    for ip_obj in result:
+        if isinstance(ip_obj, ipaddress.IPv4Address) and (
+            ip_obj in TEST_NET_1
+            or ip_obj in TEST_NET_2
+            or ip_obj in TEST_NET_3
+            or ip_obj in MCAST_TEST_NET
+        ):
             continue
 
-        kind = cur[0]
-
-        if cur in ["+ \n", "- \n"]:
-            prev = kind
+        if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj in TEST_NET_V6:
             continue
 
-        nxt = diff[num + 1] if num < len(diff) - 1 else None
-        nxt_kind = nxt[0] if nxt else None
-
-        if kind == "+":
-            if nxt_kind == "?":
-                continue_again = True
-                prev = kind
-                continue
-            if prev == "?":
-                prev = kind
-                continue
-
-        if kind == "?" and prev in ["+", "-"]:
-            prev = kind
+        if isinstance(ip_obj, ipaddress.IPv4Network) and (
+            ip_obj.subnet_of(TEST_NET_1)
+            or ip_obj.subnet_of(TEST_NET_2)
+            or ip_obj.subnet_of(TEST_NET_3)
+            or ip_obj.subnet_of(MCAST_TEST_NET)
+        ):
             continue
 
-        if kind == "-":
-            cur = re.sub(r".(.*)", r" \1", cur)
+        if isinstance(ip_obj, ipaddress.IPv6Network) and ip_obj.subnet_of(TEST_NET_V6):
+            continue
 
-        result.append(cur)
-        prev = kind
-    return result
+        faulty.append(str(ip_obj))
 
-
-def gather_comments(diff: list, review: IetfReview) -> None:
-    """
-    Gather comments in diff into review.
-
-    @param      diff    A diff with nits removed (by strip_nits_from_diff)
-    @param      review  IETF Review object.
-    """
-    para_sec = None
-    item = {}
-
-    for num, cur in enumerate(diff):
-        nxt = diff[num + 1] if num < len(diff) - 1 else None
-
-        start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
-        if start and start.group(1):
-            if "cat" in item:
-                getattr(review, item["cat"])(fmt_comment(item, para_sec), wrap=False)
-            item["cat"] = start.group(1).lower()
-            item["ctx"] = []
-            item["ctx_ok"] = start.group(2) != ""
-            item["txt"] = []
-            item["txt_ok"] = False
-            if item["ctx_ok"]:
-                cur = "+ " + start.group(2) + "\n"
-            else:
-                continue
-
-        if "txt_ok" in item:
-            kind = cur[0]
-            if item["ctx_ok"] is False:
-                if kind != " ":
-                    item["txt"].append(cur)
-                    item["ctx_ok"] = True
-                else:
-                    item["ctx"].append(cur)
-            else:
-                if kind != "+":
-                    item["txt_ok"] = True
-                else:
-                    item["txt"].append(cur)
-
-            if item["txt_ok"] or nxt is None:
-                getattr(review, item["cat"])(fmt_comment(item, para_sec), wrap=False)
-
-        para_sec = section_and_paragraph(nxt, cur, para_sec)
-
-    return review
+    if faulty:
+        msg = "Found IP "
+        if len(faulty) > 1:
+            msg += "blocks or addresses"
+        else:
+            msg += "block or address"
+        msg += " not inside RFC5737/RFC3849 example ranges: "
+        msg += word_join(faulty, prefix='"', suffix='"') + "."
+        review.comment(msg)
 
 
-def review_item(orig: list, rev: list, review: IetfReview) -> IetfReview:
-    """
-    Calculates a diff between orig and rev.
+def check_html_entities(doc: Doc, review: IetfReview) -> None:
+    unescaped = html.unescape(doc.orig)
+    if doc.orig != unescaped:
+        entities = []
+        diff = list(
+            difflib.ndiff(
+                doc.orig_lines,
+                unescaped.splitlines(keepends=True),
+                linejunk=None,
+                charjunk=None,
+            )
+        )
+        for line in diff:
+            if re.search(r"^- ", line):
+                entities.extend(re.findall(r"(&#?\w+;)", line, flags=re.IGNORECASE))
 
-    @param      orig    The original text
-    @param      rev     The revised text
-    @param      review  IETF Review object.
-    """
-
-    # difflib can't deal with single lines it seems
-    if len(orig) == 1:
-        orig.append("\n")
-    if len(rev) == 1:
-        rev.append("\n")
-
-    diff = list(difflib.ndiff(orig, rev, linejunk=None, charjunk=None))
-    gather_nits(diff, review)
-    diff = strip_nits_from_diff(diff)
-    gather_comments(diff, review)
-    return review
+        if entities:
+            review.nit(
+                "The text version of this document contains "
+                "these HTML entities, which might indicate "
+                "issues with its XML source: "
+                f"{word_join(list(set(entities)))}",
+            )
 
 
-def check_xml(doc: str, review: IetfReview) -> dict:
+def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
+    result = []
+    urls = extract_urls(doc.orig, log)
+
+    for url in urls:
+        if re.search(r"://tools\.ietf\.org", url, flags=re.IGNORECASE):
+            result.append(url)
+
+    if result:
+        review.nit_bullets(
+            "These URLs point to tools.ietf.org, which is being deprecated:",
+            result,
+        )
+        urls -= set(result)
+
+    result = []
+    for url in urls:
+        if not re.search(r"^https?:", url, flags=re.IGNORECASE):
+            result.append(url)
+
+    if result:
+        review.nit_bullets("Found non-HTTP URLs in the document:", result)
+
+    reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
+    result = []
+    for url in urls:
+        if reachability[url] is None:
+            result.append(url)
+
+    if result:
+        review.nit_bullets("These URLs in the document did not return content:", result)
+
+    result = []
+    for url in urls:
+        if url.startswith("https:"):
+            continue
+        if reachability[url] is not None:
+            test_url = re.sub(r"^\w+:", r"https:", url)
+            if fetch_url(test_url, log, verbose, "HEAD"):
+                result.append(url)
+
+    if result:
+        review.nit_bullets(
+            "These URLs in the document can probably be converted " "to HTTPS:",
+            result,
+        )
+
+
+def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     Check any XML in the document for issues
 
     @param      doc     The XML document (as a string)
     @param      review  IETF Review object
     """
-    snippets = re.finditer(r"^(.*)<\?xml\s", doc, flags=re.MULTILINE)
+    snippets = re.finditer(r"^(.*)<\?xml\s", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
-        start = re.search(r"<\s*([\w:]+)", doc[snip.start() :])
+        start = re.search(r"<\s*([\w:]+)", doc.orig[snip.start() :])
         if not start:
             log.warning("cannot find an XML start tag")
             continue
 
         end = re.search(
-            r"</\s*" + re.escape(start.group(1)) + r"\s*>", doc[snip.start() :]
+            r"</\s*" + re.escape(start.group(1)) + r"\s*>", doc.orig[snip.start() :]
         )
         if not end:
             log.warning('cannot find XML end tag "%s"', start.group(1))
             continue
 
-        text = doc[snip.start() : snip.start() + end.end()]
+        text = doc.orig[snip.start() : snip.start() + end.end()]
         if snip.group(1):
             prefix = snip.group(1)
             # log.debug('XML prefix "%s"', prefix)
@@ -596,7 +491,6 @@ def check_xml(doc: str, review: IetfReview) -> dict:
         try:
             xml.etree.ElementTree.fromstring(text)
         except xml.etree.ElementTree.ParseError as err:
-            text = text.splitlines(keepends=True)
             print(text[err.position[0] - 2])
             review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
 
@@ -706,295 +600,61 @@ def review_items(
     chk_misc = state.default if chk_misc is None else chk_misc
     chk_tlp = state.default if chk_tlp is None else chk_tlp
 
-    current_directory = os.getcwd()
-    with tempfile.TemporaryDirectory() as tmp:
-        log.debug("tmp dir %s", tmp)
-        if not items:
-            items = ["/dev/stdin"]
+    if not items:
+        items = ["/dev/stdin"]
 
-        for item in items:
-            if os.path.isdir(item):
-                for dir_item in os.listdir(item):
-                    dir_item = os.path.join(item, dir_item)
-                    if os.path.isfile(dir_item) and dir_item.endswith(".txt"):
-                        items.append(dir_item)
-                continue
+    for item in items:
+        if os.path.isdir(item):
+            for dir_item in os.listdir(item):
+                dir_item = os.path.join(item, dir_item)
+                if os.path.isfile(dir_item) and dir_item.endswith(".txt"):
+                    items.append(dir_item)
+            continue
 
-            if not os.path.exists(item):
-                log.warning("%s does not exist, skipping", item)
-                continue
+        if not os.path.exists(item):
+            log.warning("%s does not exist, skipping", item)
+            continue
 
-            orig = None
-            if item != "/dev/stdin":
-                os.chdir(tmp)
-                orig_item = os.path.basename(item)
-                get_items([orig_item], state.datatracker)
-                orig = read(orig_item, log)
-                os.chdir(current_directory)
-            rev = read(item, log)
-            if orig is None:
-                log.error(
-                    "No original for %s, cannot review, " "only performing checks",
-                    item,
-                )
-                orig = rev
-            orig_lines = orig.splitlines(keepends=True)
-            rev = rev.splitlines(keepends=True)
-            review = IetfReview(state.width)
-            review_item(orig_lines, rev, review)
-            status = get_status(orig)
-            name = basename(item)
-            not_id = not name.startswith("draft-")
+        doc = Doc(item, log, state.datatracker)
+        review = IetfReview(doc, state.width)
 
-            if chk_misc:
-                unescaped = html.unescape(orig)
-                if orig != unescaped:
-                    entities = []
-                    diff = list(
-                        difflib.ndiff(
-                            orig_lines,
-                            unescaped.splitlines(keepends=True),
-                            linejunk=None,
-                            charjunk=None,
-                        )
-                    )
-                    for line in diff:
-                        if re.search(r"^- ", line):
-                            entities.extend(
-                                re.findall(r"(&#?\w+;)", line, flags=re.IGNORECASE)
-                            )
+        if chk_misc:
+            check_html_entities(doc, review)
 
-                    if entities:
-                        review.nit(
-                            "The text version of this document contains "
-                            "these HTML entities, which might indicate "
-                            "issues with its XML source: "
-                            f"{word_join(list(set(entities)))}",
-                        )
+        if chk_boilerpl and doc.is_id:
+            check_boilerplate(doc, review)
 
-            if chk_boilerpl and not not_id:
-                check_boilerplate(orig, status, review)
+        if chk_tlp:
+            check_tlp(doc, review)
 
-            if chk_tlp:
-                check_tlp(orig, status, review)
+        if chk_meta and doc.meta:
+            check_meta(doc, review, state.datatracker, log)
 
-            meta = fetch_meta(state.datatracker, name, log)
-            if chk_meta and meta:
-                check_meta(state.datatracker, orig, meta, review, log)
+        check_xml(doc, review)
 
-            # check_xml(orig)
-            check_xml("".join(rev), review)
+        verbose = state.verbose > 0
 
-            verbose = state.verbose > 0
+        if chk_refs and doc.is_id:
+            check_refs(doc, review, state.datatracker, log)
 
-            if chk_refs and not not_id:
-                check_refs(
-                    state.datatracker,
-                    extract_refs(orig),
-                    get_relationships(orig),
-                    name,
-                    status,
-                    meta,
-                    orig,
-                    review,
-                    log,
-                )
+        if chk_urls:
+            check_urls(doc, review, verbose)
 
-            if chk_urls:
-                result = []
-                urls = extract_urls(orig, log)
+        if chk_inclusiv:
+            check_inclusivity(doc, review, log, verbose)
 
-                for url in urls:
-                    if re.search(r"://tools\.ietf\.org", url, flags=re.IGNORECASE):
-                        result.append(url)
+        if chk_ips:
+            check_ips(doc, review)
 
-                if result:
-                    review.nit_bullets(
-                        "These URLs point to tools.ietf.org, which is "
-                        "being deprecated:",
-                        result,
-                    )
-                    urls -= set(result)
+        thank_art_reviewer(doc, review, thank_art, state.datatracker)
 
-                result = []
-                for url in urls:
-                    if not re.search(r"^https?:", url, flags=re.IGNORECASE):
-                        result.append(url)
+        if doc.name.startswith("charter-"):
+            review.comment("Note to self: Ask about any chair changes.")
 
-                if result:
-                    review.nit_bullets("Found non-HTTP URLs in the document:", result)
+        if chk_grammar:
+            check_grammar(doc.current, grammar_skip_rules, review, verbose)
 
-                reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
-                result = []
-                for url in urls:
-                    if reachability[url] is None:
-                        result.append(url)
-
-                if result:
-                    review.nit_bullets(
-                        "These URLs in the document did not return content:", result
-                    )
-
-                result = []
-                for url in urls:
-                    if url.startswith("https:"):
-                        continue
-                    if reachability[url] is not None:
-                        test_url = re.sub(r"^\w+:", r"https:", url)
-                        if fetch_url(test_url, log, verbose, "HEAD") is not None:
-                            result.append(url)
-
-                if result:
-                    review.nit_bullets(
-                        "These URLs in the document can probably be converted "
-                        "to HTTPS:",
-                        result,
-                    )
-
-            if chk_inclusiv:
-                check_inclusivity(unfold("".join(rev)), review, log, verbose)
-
-            art_reviews = fetch_dt(
-                state.datatracker,
-                "doc/reviewassignmentdocevent/?doc__name=" + name,
-                log,
-            )
-
-            if chk_ips:
-                result = []
-                faulty = []
-                for ip_literal in extract_ips(orig):
-                    if "/" in ip_literal:
-                        try:
-                            result.append(ipaddress.ip_network(ip_literal))
-                        except ValueError:
-                            faulty.append(str(ip_literal))
-                    else:
-                        try:
-                            result.append(ipaddress.ip_address(ip_literal))
-                        except ValueError:
-                            faulty.append(str(ip_literal))
-
-                if faulty:
-                    msg = "Unparsable possible IP "
-                    if len(faulty) > 1:
-                        msg += "blocks or addresses: "
-                    else:
-                        msg += "block or address: "
-                    msg += word_join(faulty, prefix='"', suffix='"') + "."
-                    review.nit(msg)
-
-                faulty = []
-                for ip_obj in result:
-                    if isinstance(ip_obj, ipaddress.IPv4Address) and (
-                        ip_obj in TEST_NET_1
-                        or ip_obj in TEST_NET_2
-                        or ip_obj in TEST_NET_3
-                        or ip_obj in MCAST_TEST_NET
-                    ):
-                        continue
-
-                    if (
-                        isinstance(ip_obj, ipaddress.IPv6Address)
-                        and ip_obj in TEST_NET_V6
-                    ):
-                        continue
-
-                    if isinstance(ip_obj, ipaddress.IPv4Network) and (
-                        ip_obj.subnet_of(TEST_NET_1)
-                        or ip_obj.subnet_of(TEST_NET_2)
-                        or ip_obj.subnet_of(TEST_NET_3)
-                        or ip_obj.subnet_of(MCAST_TEST_NET)
-                    ):
-                        continue
-
-                    if isinstance(ip_obj, ipaddress.IPv6Network) and ip_obj.subnet_of(
-                        TEST_NET_V6
-                    ):
-                        continue
-
-                    faulty.append(str(ip_obj))
-
-                if faulty:
-                    msg = "Found IP "
-                    if len(faulty) > 1:
-                        msg += "blocks or addresses"
-                    else:
-                        msg += "block or address"
-                    msg += " not inside RFC5737/RFC3849 example ranges: "
-                    msg += word_join(faulty, prefix='"', suffix='"') + "."
-                    review.comment(msg)
-
-            if art_reviews:
-                for rev_assignment in art_reviews:
-                    if rev_assignment["type"] != "closed_review_assignment":
-                        continue
-
-                    assignment = fetch_dt(
-                        state.datatracker,
-                        rev_assignment["review_assignment"],
-                        log,
-                    )
-
-                    if not assignment:
-                        log.warning("Could not fetch review_assignment for %s", name)
-                        continue
-
-                    reviewer = fetch_dt(state.datatracker, assignment["reviewer"], log)
-
-                    if not reviewer:
-                        log.warning("Could not fetch reviewer for %s", name)
-                        continue
-
-                    reviewer = fetch_dt(state.datatracker, reviewer["person"], log)
-
-                    if not reviewer:
-                        log.warning("Could not fetch reviewer for %s", name)
-                        continue
-
-                    if assignment["state"].endswith("rejected/"):
-                        log.debug("Review for %s was rejected", name)
-                        continue
-
-                    if assignment["state"].endswith("no-response/"):
-                        log.debug("Review for %s was not completed", name)
-                        continue
-
-                    if assignment["state"].endswith("withdrawn/"):
-                        log.debug("Review for %s was withdrawn", name)
-                        continue
-
-                    art_review = fetch_dt(state.datatracker, assignment["review"], log)
-
-                    if not art_review:
-                        log.warning("Could not fetch review for %s", name)
-                        continue
-
-                    group = fetch_dt(state.datatracker, art_review["group"], log)
-
-                    if not group:
-                        log.warning("Could not fetch ART for %s", name)
-                        continue
-
-                    if group["acronym"].lower() == thank_art.lower():
-                        review.comment(
-                            "Thanks to "
-                            + (reviewer["name_from_draft"] or reviewer["name"])
-                            + f" for their {group['name']} review "
-                            f"({art_review['external_url']})."
-                        )
-
-            else:
-                log.warning("Could not fetch ART reviews for %s", name)
-
-            if name.startswith("charter-"):
-                review.comment(
-                    "Note to self: Ask about any chair changes.",
-                )
-
-            if chk_grammar:
-                check_grammar(rev, grammar_skip_rules, review, verbose)
-            print(review)
+        print(review)
 
 
 @click.command(

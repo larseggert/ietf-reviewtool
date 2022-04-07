@@ -6,18 +6,17 @@ name: Process linter results
 # access to secrets
 on:
   workflow_run:
-    workflows:
-      - Lint
+    workflows: ["Linter"]
     types:
       - completed
 
 jobs:
   upload:
     runs-on: ubuntu-latest
-    if: >
-      ${{ github.event.workflow_run.event == "pull_request" }}
+    if: ${{ github.event.workflow_run.conclusion == "success" }}
     steps:
-      - uses: actions/download-artifact@v3
+      - name: "Download artifacts"
+        uses: actions/download-artifact@v3
         id: download
         with:
           name: linter_output

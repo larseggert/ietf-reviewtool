@@ -2,34 +2,22 @@
 
 import re
 
-
-def fmt_section_and_paragraph(para_sec: list, cat: str) -> str:
-    """
-    Return a formatted prefix line indicating the current section name,
-    paragraph number, and category.
-
-    @param      para_sec  The current (paragraph number, section name) list
-    @param      cat       The category to indicate
-
-    @return     A formatted prefix line.
-    """
-    para_sec = para_sec if para_sec else [1, None, False]
-    line = f"{para_sec[1].strip()}, p" if para_sec[1] else "P"
-    line += f"aragraph {para_sec[0]}, {cat}:\n"
-    return line
+from .docposition import DocPosition
 
 
-def fmt_nit(changed: list, indicator: list, para_sec: list) -> str:
+def fmt_nit(
+    changed: dict[str, list[str]], indicator: dict[str, list[str]], doc_pos: DocPosition
+) -> str:
     """
     Format a nit.
 
     @param      changed    Changed lines
     @param      indicator  Indicator lines
-    @param      para_sec   The current (paragraph number, section name) list
+    @param      doc_pos    The current document position
 
     @return     The formatted nit.
     """
-    result = [fmt_section_and_paragraph(para_sec, "nit")]
+    result = [doc_pos.fmt_section_and_paragraph("nit")]
     for prefix in ["-", "+"]:
         for tup in zip(changed[prefix], indicator[prefix]):
             # add the changed line followed by an indicator line
@@ -41,16 +29,16 @@ def fmt_nit(changed: list, indicator: list, para_sec: list) -> str:
     return "".join(result)
 
 
-def fmt_comment(item: dict, para_sec: list) -> str:
+def fmt_comment(item: dict, doc_pos: DocPosition) -> str:
     """
     Format a comment.
 
-    @param      item      The comment item dict
-    @param      para_sec  The current (paragraph number, section name) list
+    @param      item     The comment item dict
+    @param      doc_pos  The current document position
 
     @return     The formatted comment.
     """
-    result = [fmt_section_and_paragraph(para_sec, item["cat"])]
+    result = [doc_pos.fmt_section_and_paragraph(item["cat"])]
     result.extend([re.sub(r".(.*)", r">\1", x) for x in item["ctx"]])
     if item["ctx"]:
         result.append("\n")
@@ -58,6 +46,6 @@ def fmt_comment(item: dict, para_sec: list) -> str:
 
     result.append(txt)
     if item["ctx"]:
-        para_sec[0] -= 1  # don't count this as a paragraph
+        doc_pos.para_num -= 1  # don't count this as a paragraph
     item.clear()
     return "".join(result)

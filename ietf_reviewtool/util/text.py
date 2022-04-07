@@ -4,9 +4,7 @@ import logging
 import re
 import urllib.parse
 
-import urlextract
-
-from .patterns import SECTION_PATTERN
+import urlextract  # type: ignore
 
 
 def normalize_ws(string: str) -> str:
@@ -22,13 +20,12 @@ def normalize_ws(string: str) -> str:
 
 def word_join(words: list, ox_comma=True, prefix="", suffix="") -> str:
     """
-    Join list items using commas and "and", optionally each prefixed by
-    something.
+    Join list items using commas and "and", optionally each prefixed by something.
 
-    @param      words         The words to join
-    @param      ox_comma      Whether to use the oxford comma
-    @param      prefix        A prefix to use for each word
-    @param      suffix        A suffix to use for each word
+    @param      words     The words to join
+    @param      ox_comma  Whether to use the oxford comma
+    @param      prefix    A prefix to use for each word
+    @param      suffix    A suffix to use for each word
 
     @return     String of joined words
     """
@@ -100,6 +97,7 @@ def extract_urls(
     Return a list of URLs in a text string.
 
     @param      text      The text to extract URLs from
+    @param      log       The log
     @param      examples  Include example URLs
     @param      common    Include URLs that are common in IETF documents
 
@@ -160,9 +158,9 @@ def extract_urls(
 
 def strip_pagination(text: str) -> str:
     """
-    Strip headers and footers, end-of-line whitespace and CR/LF, similar to the
-    rfcstrip tool (https://trac.tools.ietf.org/tools/rfcstrip/) from which the
-    regexs used below were originally adopted.
+    Strip headers and footers, end-of-line whitespace and CR/LF, similar to the rfcstrip
+    tool (https://trac.tools.ietf.org/tools/rfcstrip/) from which the regexs used below
+    were originally adopted.
 
     @param      text  The text of an RFC or Internet-Draft
 
@@ -224,76 +222,6 @@ def strip_pagination(text: str) -> str:
     return stripped
 
 
-def extract_refs(text: list) -> dict:
-    """
-    Return a dict of references found in the text as well as the normative and
-    informative reference sections.
-
-    @param      text  The text to parse for references
-
-    @return     A dict with sets of found references.
-    """
-    parts = {"text": "", "informative": "", "normative": ""}
-    part = "text"
-    for line in text.splitlines(keepends=True):
-        pot_sec = SECTION_PATTERN.search(line)
-        if pot_sec:
-            which = pot_sec.group(0)
-            if re.search(
-                r"^(?:(\d\.?)+\s+)?(?:Non-Norm|Inform)ative\s+References?\s*$",
-                which,
-                flags=re.IGNORECASE,
-            ):
-                part = "informative"
-            elif re.search(
-                r"^(?:(\d\.?)+\s+)?(Normative\s+)?References?\s*$",
-                which,
-                flags=re.IGNORECASE,
-            ):
-                part = "normative"
-            else:
-                part = "text"
-        parts[part] += line
-
-    refs: dict[str, list[str]] = {}
-    for part, content in parts.items():
-        refs[part] = re.findall(
-            r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\]"
-            + (r"|RFC\d+|draft-[-a-z\d_.]+" if part == "text" else r"")
-            + r")",
-            unfold(content),
-            flags=re.IGNORECASE,
-        )
-        refs[part] = list({f"[{untag(ref)}]" for ref in refs[part]})
-
-    resolved: dict[str, list[str]] = {}
-    for part in ["informative", "normative"]:
-        resolved[part] = []
-        for ref in refs[part]:
-            ref_text = re.search(
-                r"\s*" + re.escape(ref) + r"\s+((?:[^\n][\n]?)+)\n",
-                parts[part],
-                re.DOTALL,
-            )
-            if ref_text:
-                ref_text = unfold(ref_text.group(0))
-                found = False
-
-                for pat in [r"(draft-[-a-z\d_.]+)", r"((?:RFC|rfc)\d+)"]:
-                    match = re.search(pat, ref_text)
-                    if match:
-                        found = True
-                        resolved[part].append((ref, match.group(0).lower()))
-                        break
-
-                if not found:
-                    urls = extract_urls(ref_text, True, True)
-                    resolved[part].append((ref, urls.pop() if urls else None))
-
-    resolved["text"] = refs["text"]
-    return resolved
-
-
 def untag(tag: str) -> str:
     """
     Remove angle brackets from reference tag.
@@ -305,102 +233,13 @@ def untag(tag: str) -> str:
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
 
 
-def get_status(doc: str) -> str:
-    """
-    Extract the standards level status of a given document.
-
-    @param      doc   The document to extract the level from
-
-    @return     The status of the document.
-    """
-    status = re.search(
-        r"^(?:[Ii]ntended )?[Ss]tatus:\s*((?:\w+\s)+)",
-        doc,
-        re.MULTILINE,
-    )
-    return status.group(1).strip() if status else ""
-
-
-def get_relationships(
-    doc: str,
-) -> dict:
-    """
-    Extract the RFCs that are intended to be updated or obsoleted by this
-    document.
-
-    @param      doc   The document to extract the information from
-
-    @return     A dict of relationships and lists of RFC *numbers*
-    """
-    result = {}
-    pat = {"updates": r"[Uu]pdates", "obsoletes": r"[Oo]bsoletes"}
-    for rel in ["updates", "obsoletes"]:
-        match = re.search(
-            r"^"
-            + pat[rel]
-            + r":\s*((?:(?:RFC\s*)?\d{3,},?\s*)+)"
-            + r"(?:.*[\n\r\s]+((?:(?:RFC\s*)?\d{3,},?\s*)+)?)?",
-            doc,
-            re.MULTILINE,
-        )
-        if match:
-            result[rel] = "".join([group for group in match.groups() if group])
-            result[rel] = re.sub("rfc", "", result[rel], flags=re.IGNORECASE)
-            result[rel] = re.sub(r"[,\s]+(\w)", r",\1", result[rel])
-            result[rel] = result[rel].strip().split(",")
-            result[rel] = [r for r in result[rel] if r]
-    return result
-
-
 def basename(item: str) -> str:
     """
-    Return the base name of a given item by stripping the path, the version
-    information and the txt suffix.
+    Return the base name of a given item by stripping the path, the version information
+    and the txt suffix.
 
     @param      item  The item to return the base name for
 
     @return     The base name of the item
     """
     return re.sub(r"^(?:.*/)?(.*[^-]+)(-\d+)+(?:\.txt)?$", r"\1", item)
-
-
-def section_and_paragraph(
-    nxt: str, cur: str, para_sec: list, is_diff: bool = True
-) -> list:
-    """
-    Return a list consisting of the current paragraph number and section title,
-    based on the next and current lines of text and the current paragraph
-    number and section title list.
-
-    @param      nxt       The next line in the diff
-    @param      cur       The current line in the diff
-    @param      para_sec  The current (paragraph number, section name) list
-
-    @return     An updated (paragraph number, section name) list.
-    """
-    [para, sec, had_nn] = para_sec if para_sec is not None else [1, None, False]
-
-    # track paragraphs
-    pat = {True: r"^[\- ] +$", False: r"^\s*$"}
-    if re.search(pat[is_diff], cur):
-        para += 1
-
-    # track sections
-    pot_sec = SECTION_PATTERN.search(cur)
-    pat = {True: r"^([\- ] +$|\+ )", False: r"^( *$)"}
-    if pot_sec and nxt and (re.search(pat[is_diff], nxt) or len(cur) > 65):
-        pot_sec = pot_sec.group(1)
-        if re.match(r"\d", pot_sec):
-            if had_nn:
-                para = 1
-                sec = (
-                    "Section " + re.sub(r"(.*)\.$", r"\1", pot_sec)
-                    if re.match(r"\d", pot_sec)
-                    else f'"{pot_sec}"'
-                )
-        else:
-            para = 1
-            had_nn = True
-            sec = '"' + pot_sec + '"'
-
-    return [para, sec, had_nn]

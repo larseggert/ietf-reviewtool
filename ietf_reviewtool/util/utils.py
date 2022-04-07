@@ -7,13 +7,15 @@ import sys
 import charset_normalizer
 
 
-def die(msg: list, log: logging.Logger, err: int = 1) -> None:
+def die(msg: str, log: logging.Logger, err: int = 1) -> None:
     """
     Print a message and exit with an error code.
 
     @param      msg   The message to print
+    @param      log   The log
+    @param      err   The error code to return
 
-    @return
+    @return     { description_of_the_return_value }
     """
     log.error(msg)
     sys.exit(err)
@@ -24,6 +26,7 @@ def read(file_name: str, log: logging.Logger) -> str:
     Read a file into a string.
 
     @param      file_name  The item to read
+    @param      log        The log
 
     @return     The content of the item.
     """
@@ -32,7 +35,7 @@ def read(file_name: str, log: logging.Logger) -> str:
             return str(charset_normalizer.from_bytes(file.read()).best())
     except FileNotFoundError as err:
         log.error("%s -> %s", file_name, err)
-        return None
+        return ""
 
 
 def write(text: str, file_name: str) -> None:
@@ -65,7 +68,7 @@ def duplicates(data: list) -> set:
             if seen[item] == 1:
                 dupes.add(item)
             seen[item] += 1
-    return dupes.discard(None)
+    return dupes
 
 
 def get_latest(data: list, key: str) -> dict:

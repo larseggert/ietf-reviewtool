@@ -7,11 +7,13 @@ import os
 import re
 import urllib.request
 
-import appdirs
+import appdirs  # type: ignore
+import base64
+import gzip
 import requests
 import requests_cache
 
-from .text import basename
+from .text import basename, strip_pagination
 from .utils import get_latest, read, write
 
 
@@ -60,7 +62,7 @@ def fetch_url(
                 return response.read()
         except urllib.error.URLError as err:
             log.debug("%s -> %s", url, err)
-            return None
+            return ""
 
     while True:
         try:
@@ -102,7 +104,7 @@ def fetch_url(
                 headers["Range"] = "bytes=0-100"
                 method = "GET"
                 continue
-            return None
+            return ""
         return response.text
 
 
@@ -123,10 +125,10 @@ def fetch_dt(datatracker: str, query: str, log: logging.Logger) -> dict:
     else:
         query += "?format=json"
     content = fetch_url(datatracker + query, log)
-    if content is not None:
+    if content:
         result = json.loads(content)
         return result["objects"] if "objects" in result else result
-    return None
+    return {}
 
 
 def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
@@ -144,7 +146,7 @@ def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
         datatracker, "doc/writeupdocevent/?doc__name=" + basename(item), log
     )
     if not doc_events:
-        return None
+        return ""
 
     events = {
         e["type"]
@@ -171,10 +173,10 @@ def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
         else:
             log.debug("no %s for %s", evt, item)
 
-    return text if len(events) == 1 else None
+    return text if len(events) == 1 else ""
 
 
-def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> list:
+def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> set:
     """
     Fetches IDs and RFCs mentioned in the last-call message. The *assumption*
     is that they are all called-out downrefs.
@@ -185,7 +187,7 @@ def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> list:
     """
     last_call = read("last_call_text/" + name, log)
     if not last_call:
-        return []
+        return set()
     docs = re.findall(
         r"rfc\s*\d+|draft-[-a-z\d_]+",
         last_call,
@@ -210,5 +212,129 @@ def fetch_meta(datatracker: str, doc: str, log: logging.Logger) -> dict:
     meta = fetch_url(url, log)
     if not meta:
         log.info("No metadata available for %s", doc)
-        return None
+        return {}
     return json.loads(meta)
+
+
+def get_items(
+    items: list,
+    log: logging.Logger,
+    datatracker: str,
+    strip: bool = True,
+    get_writeup=False,
+    get_xml=True,
+    extract_md=True,
+) -> list:
+    """
+    Download named items into files of the same name in the current directory.
+    Does not overwrite existing files. Names need to include the revision, and
+    may or may not include the ".txt" suffix.
+
+    @param      items        The items to download
+    @param      datatracker  The datatracker URL to use
+    @param      strip        Whether to run strip() on the downloaded item
+    @param      get_writeup  Whether to download associated write-ups
+    @param      get_xml      Whether to download XML sources
+    @param      extract_md   Whether to extract Markdown from XML sources
+
+    @return     List of file names written or existing
+    """
+    result = []
+    for item in items:
+        do_strip = strip
+        file_name = item
+        if not file_name.endswith(".txt") and not file_name.endswith(".xml"):
+            file_name += ".txt"
+
+        if get_writeup:
+            get_writeups(datatracker, item, log)
+
+        if get_xml and item.startswith("draft-") and file_name.endswith(".txt"):
+            # also try and get XML source
+            items.append(re.sub(r"\.txt$", ".xml", file_name))
+
+        if os.path.isfile(file_name):
+            log.warning("%s exists, skipping", file_name)
+            result.append(file_name)
+            continue
+
+        log.debug("Getting %s", item)
+        cache = None
+        text = ""
+        url = ""
+        match = re.search(r"^(conflict-review|status-change)-", item)
+        if item.startswith("draft-"):
+            url = "https://ietf.org/archive/id/" + file_name
+            cache = os.getenv("IETF_IDS")
+        elif item.startswith("rfc"):
+            url = "https://rfc-editor.org/rfc/" + file_name
+            cache = os.getenv("IETF_RFCS")
+        elif item.startswith("charter-"):
+            url_pattern = re.sub(
+                r"(.*)(((-\d+){2}).txt)$", r"\1/withmilestones\2", file_name
+            )
+            url = datatracker + "/doc/" + url_pattern
+            # the charters in rsync don't have milestones, can't use
+            # cache = os.getenv("IETF_CHARTERS")
+            do_strip = False
+        elif match:
+            which = match[1]
+            doc = re.sub(which + r"-(.*)", r"draft-\1", item)
+            text = get_writeups(datatracker, doc, log)
+            # in-progress conflict-reviews/status-changes are not in the cache
+            doc = basename(doc)
+            slug = "conflrev" if which == "conflict-review" else "statchg"
+            target = fetch_dt(
+                datatracker,
+                f"doc/relateddocument/?relationship__slug={slug}&target__name=" + doc,
+                log,
+            )
+            if not target:
+                log.warning("cannot find target for %s", doc)
+                continue
+            docalias = fetch_dt(datatracker, target[0]["target"], log)
+            if not docalias:
+                log.warning("cannot find docalias for %s", target[0]["target"])
+                continue
+            doc = fetch_dt(datatracker, docalias["document"], log)
+            if not doc:
+                log.warning("cannot find doc for %s", docalias["document"])
+                continue
+            items.append(f"{doc['name']}-{doc['rev']}.txt")
+            do_strip = False
+        # else:
+        #     die(f"Unknown item type: {item}", log)
+
+        if cache:
+            cache_file = os.path.join(cache, file_name)
+            if os.path.isfile(cache_file):
+                log.debug("Using cached %s", item)
+                text = read(cache_file, log)
+            else:
+                log.debug("No cached copy of %s in %s", item, cache)
+
+        if not text and url:
+            text = fetch_url(url, log)
+
+        if text:
+            if file_name.endswith(".xml") and extract_md:
+                # try and extract markdown
+                mkd = re.search(
+                    r"<!--\s*##markdown-source:(.*)-->",
+                    text,
+                    flags=re.DOTALL,
+                )
+                if mkd:
+                    log.debug("Extracting Markdown source of %s", file_name)
+                    mkd_file = re.sub(r"\.xml$", ".md", file_name)
+                    with open(mkd_file, "wb") as file:
+                        file.write(gzip.decompress(base64.b64decode(mkd[1])))
+                    result.append(mkd_file)
+
+            elif do_strip:
+                log.debug("Stripping %s", item)
+                text = strip_pagination(text)
+            write(text, file_name)
+            result.append(file_name)
+
+    return result
