@@ -6,7 +6,7 @@ import urllib.parse
 
 import urlextract
 
-from .patterns import SECTION_PATTERN
+from .docposition import SECTION_PATTERN
 
 
 def normalize_ws(string: str) -> str:
@@ -362,45 +362,3 @@ def basename(item: str) -> str:
     @return     The base name of the item
     """
     return re.sub(r"^(?:.*/)?(.*[^-]+)(-\d+)+(?:\.txt)?$", r"\1", item)
-
-
-def section_and_paragraph(
-    nxt: str, cur: str, para_sec: list, is_diff: bool = True
-) -> list:
-    """
-    Return a list consisting of the current paragraph number and section title,
-    based on the next and current lines of text and the current paragraph
-    number and section title list.
-
-    @param      nxt       The next line in the diff
-    @param      cur       The current line in the diff
-    @param      para_sec  The current (paragraph number, section name) list
-
-    @return     An updated (paragraph number, section name) list.
-    """
-    [para, sec, had_nn] = para_sec if para_sec is not None else [1, None, False]
-
-    # track paragraphs
-    pat = {True: r"^[\- ] +$", False: r"^\s*$"}
-    if re.search(pat[is_diff], cur):
-        para += 1
-
-    # track sections
-    pot_sec = SECTION_PATTERN.search(cur)
-    pat = {True: r"^([\- ] +$|\+ )", False: r"^( *$)"}
-    if pot_sec and nxt and (re.search(pat[is_diff], nxt) or len(cur) > 65):
-        pot_sec = pot_sec.group(1)
-        if re.match(r"\d", pot_sec):
-            if had_nn:
-                para = 1
-                sec = (
-                    "Section " + re.sub(r"(.*)\.$", r"\1", pot_sec)
-                    if re.match(r"\d", pot_sec)
-                    else f'"{pot_sec}"'
-                )
-        else:
-            para = 1
-            had_nn = True
-            sec = '"' + pot_sec + '"'
-
-    return [para, sec, had_nn]

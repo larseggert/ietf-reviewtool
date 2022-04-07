@@ -42,6 +42,7 @@ from .inclusive import check_inclusivity
 from .metadata import check_meta
 from .references import check_refs
 from .review import IetfReview
+from .util.docposition import DocPosition
 
 from .util.fetch import (
     fetch_url,
@@ -58,7 +59,6 @@ from .util.text import (
     extract_urls,
     basename,
     strip_pagination,
-    section_and_paragraph,
     get_status,
     get_relationships,
     extract_refs,
@@ -400,7 +400,7 @@ def gather_nits(diff: list, review: IetfReview) -> list:
     """
     changed = {"+": [], "-": []}
     indicator = {"+": [], "-": []}
-    para_sec = None
+    doc_pos = DocPosition()
     prev = None
 
     for num, cur in enumerate(diff):
@@ -434,18 +434,18 @@ def gather_nits(diff: list, review: IetfReview) -> list:
             indicator[kind].append(None)
 
         elif changed["-"] or changed["+"]:
-            review.nit(fmt_nit(changed, indicator, para_sec), wrap=False)
+            review.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
 
         elif not nxt and kind != " ":
             changed[kind].append(cur)
 
         if nxt:
-            para_sec = section_and_paragraph(nxt, cur, para_sec)
+            doc_pos.update(nxt, cur)
 
         prev = kind
 
     if changed["-"] or changed["+"]:
-        review.nit(fmt_nit(changed, indicator, para_sec), wrap=False)
+        review.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
 
 
 def strip_nits_from_diff(diff: list) -> list:
@@ -502,7 +502,7 @@ def gather_comments(diff: list, review: IetfReview) -> None:
     @param      diff    A diff with nits removed (by strip_nits_from_diff)
     @param      review  IETF Review object.
     """
-    para_sec = None
+    doc_pos = DocPosition()
     item = {}
 
     for num, cur in enumerate(diff):
@@ -511,7 +511,7 @@ def gather_comments(diff: list, review: IetfReview) -> None:
         start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
         if start and start.group(1):
             if "cat" in item:
-                getattr(review, item["cat"])(fmt_comment(item, para_sec), wrap=False)
+                getattr(review, item["cat"])(fmt_comment(item, doc_pos), wrap=False)
             item["cat"] = start.group(1).lower()
             item["ctx"] = []
             item["ctx_ok"] = start.group(2) != ""
@@ -537,9 +537,9 @@ def gather_comments(diff: list, review: IetfReview) -> None:
                     item["txt"].append(cur)
 
             if item["txt_ok"] or nxt is None:
-                getattr(review, item["cat"])(fmt_comment(item, para_sec), wrap=False)
+                getattr(review, item["cat"])(fmt_comment(item, doc_pos), wrap=False)
 
-        para_sec = section_and_paragraph(nxt, cur, para_sec)
+        doc_pos.update(nxt, cur)
 
     return review
 

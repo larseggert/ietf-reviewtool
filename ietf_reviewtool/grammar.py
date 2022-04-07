@@ -6,8 +6,8 @@ import re
 import language_tool_python
 
 from .review import IetfReview
-from .util.format import fmt_section_and_paragraph
-from .util.text import unfold, section_and_paragraph
+from .util.text import unfold
+from .util.docposition import DocPosition
 
 
 def check_grammar(
@@ -66,18 +66,16 @@ def check_grammar(
     ]
     issues = [i for i in issues if not i.ruleId.startswith("EN_REPEATEDWORDS_")]
 
-    para_sec = None
+    doc_pos = DocPosition()
     cur = 0
     pos = 0
     for issue in issues:
         while pos + len(text[cur + 1]) < issue.offset:
-            para_sec = section_and_paragraph(
-                text[cur + 1], text[cur], para_sec, is_diff=False
-            )
+            doc_pos.update(text[cur + 1], text[cur], is_diff=False)
             pos += len(text[cur])
             cur += 1
 
-        review.nit(fmt_section_and_paragraph(para_sec, "nit"), end="")
+        review.nit(doc_pos.fmt_section_and_paragraph("nit"), end="")
         context = issue.context.lstrip(".")
         offset = issue.offsetInContext - (len(issue.context) - len(context))
         context = context.rstrip(".")

@@ -7,7 +7,7 @@ import num2words
 
 from .review import IetfReview
 from .util.fetch import fetch_meta
-from .util.patterns import SECTION_PATTERN
+from .util.docposition import SECTION_PATTERN
 from .util.text import (
     unfold,
     word_join,
