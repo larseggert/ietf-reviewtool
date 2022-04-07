@@ -7,47 +7,45 @@ from .review import IetfReview
 from .util.fetch import fetch_meta, fetch_docs_in_last_call_text, fetch_dt
 from .util.text import untag, word_join, basename
 from .util.utils import duplicates, get_latest, die
+from .doc import Doc
 
 
 def check_refs(
-    datatracker: str,
-    refs: dict,
-    rels: dict,
-    name: str,
-    status: str,
-    meta: dict,
-    text: str,
+    doc: Doc,
     review: IetfReview,
+    datatracker: str,
     log: logging.Logger,
 ) -> None:
     """
     Check the references.
 
+    @param      doc          The document
     @param      datatracker  The datatracker URL to use
-    @param      refs         The references to check
-    @param      rels         The relationship of this document to others
-    @param      name         The name of this document.
-    @param      status       The standards level of the given document
-    @param      meta         The metadata
-    @param      text         The document text
     @param      review       The IETF review to comment upon
     @param      log          The log to write to
+
+    @return     { description_of_the_return_value }
     """
     downrefs_in_registry = fetch_downrefs(datatracker, log)
     docs_in_lc = (
-        fetch_docs_in_last_call_text(meta["name"] + "-" + meta["rev"] + ".txt", log)
-        if meta
+        fetch_docs_in_last_call_text(
+            doc.meta["name"] + "-" + doc.meta["rev"] + ".txt", log
+        )
+        if doc.meta
         else []
     )
 
     # remove self-mentions from extracted references in the text
-    refs["text"] = [r for r in refs["text"] if not untag(r).startswith(name)]
+    doc.references["text"] = [
+        r for r in doc.references["text"] if not untag(r).startswith(doc.name)
+    ]
 
     # check for duplicates
     for kind in ["normative", "informative"]:
-        if not refs[kind]:
+        if not doc.references[kind]:
             continue
-        tags, tgts = zip(*refs[kind])
+        print(doc.references)
+        tags, tgts = zip(*doc.references[kind])
         dupes = duplicates(tags)
         if dupes:
             review.nit(
@@ -56,15 +54,15 @@ def check_refs(
 
         dupes = duplicates(tgts)
         if dupes:
-            tags = [t[0] for t in refs[kind] if t[1] in dupes]
+            tags = [t[0] for t in doc.references[kind] if t[1] in dupes]
             review.nit(
                 f"Duplicate {kind} references to: {word_join(dupes)}.",
             )
 
-    norm = set(e[0] for e in refs["normative"])
-    info = set(e[0] for e in refs["informative"])
+    norm = set(e[0] for e in doc.references["normative"])
+    info = set(e[0] for e in doc.references["informative"])
     both = norm | info
-    in_text = {"[" + r + "]" for r in {untag(r) for r in refs["text"]}}
+    in_text = {"[" + r + "]" for r in {untag(r) for r in doc.references["text"]}}
 
     if norm & info:
         review.nit(
@@ -80,40 +78,39 @@ def check_refs(
         ref_list = word_join(list(both - in_text))
         review.nit(f"Uncited references: {ref_list}.")
 
-    for rel, docs in rels.items():
-        for doc in docs:
-            ref = f"rfc{doc}"
-            in_normative = ref in [x[1] for x in refs["normative"]]
-            in_informative = ref in [x[1] for x in refs["informative"]]
+    for rel, rel_docs in doc.relationships.items():
+        for rel_doc in rel_docs:
+            ref = f"rfc{rel_doc}"
+            in_normative = ref in [x[1] for x in doc.references["normative"]]
+            in_informative = ref in [x[1] for x in doc.references["informative"]]
 
             if not in_normative and not in_informative:
                 review.comment(
-                    f"Document {rel} RFC{doc}, but does not cite it as a "
+                    f"Document {rel} RFC{rel_doc}, but does not cite it as a "
                     f"reference.",
                 )
 
-    level = meta and (meta["std_level"] or meta["intended_std_level"])
+    level = doc.meta and (doc.meta["std_level"] or doc.meta["intended_std_level"])
     if not level:
         # if we have no level from the metadata, see if the document has one
-        level = re.search(r"^Intended status: (.*)\s{2,}", text, flags=re.MULTILINE)
-        level = level[1].rstrip() if level else "unknown"
+        level = doc.status if doc.status else "unknown"
 
     for kind in ["normative", "informative"]:
-        for tag, doc in refs[kind]:
-            if doc:
-                name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", doc)
-            if not doc or not name:
+        for tag, ref_doc in doc.references[kind]:
+            if ref_doc:
+                name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
+            if not ref_doc or not name:
                 log.debug(
                     "No metadata available for %s reference %s",
                     kind,
                     tag,
                 )
-                if kind == "normative" and status.lower() not in [
+                if kind == "normative" and doc.status.lower() not in [
                     "informational",
                     "experimental",
                 ]:
                     review.comment(
-                        f"Possible DOWNREF from this {status} doc "
+                        f"Possible DOWNREF from this {doc.status} doc "
                         f"to {tag}. If so, the IESG needs to approve it.",
                     )
                 continue
@@ -142,7 +139,7 @@ def check_refs(
                         f"available revision.",
                     )
 
-            if status.lower() not in ["informational", "experimental"]:
+            if doc.status.lower() not in ["informational", "experimental"]:
                 ref_level = (
                     ref_meta["std_level"] or ref_meta["intended_std_level"] or "unknown"
                 )

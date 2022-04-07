@@ -4,9 +4,10 @@ import re
 
 from .review import IetfReview
 from .util.text import normalize_ws, unfold, word_join
+from .doc import Doc
 
 
-def check_tlp(text: str, status: str, review: IetfReview) -> None:
+def check_tlp(doc: Doc, review: IetfReview) -> None:
     """
     Check the boilerplate against the Trust Legal Provisions (TLP).
 
@@ -14,7 +15,7 @@ def check_tlp(text: str, status: str, review: IetfReview) -> None:
     @param      status  The standards level of this document
     @param      review  The IETF Review document to add comments to
     """
-    text = unfold(text)
+    text = unfold(doc.orig)
     if re.search(
         r"""This\s+document\s+may\s+not\s+be\s+modified,?\s+and\s+derivative\s+
             works\s+of\s+it\s+may\s+not\s+be\s+created""",
@@ -26,7 +27,7 @@ def check_tlp(text: str, status: str, review: IetfReview) -> None:
             "Publication Limitation clause. This means it can in most cases"
             "not be a WG document."
         )
-        if status.lower() == "standards track":
+        if doc.status.lower() == "standards track":
             msg += " And it cannot be published on the Standards Track."
         review.discuss(msg)
 
@@ -38,7 +39,7 @@ def check_tlp(text: str, status: str, review: IetfReview) -> None:
         )
 
 
-def check_boilerplate(text: str, status: str, review: IetfReview) -> None:
+def check_boilerplate(doc: Doc, review: IetfReview) -> None:
     """
     Check the RFC2119/RFC8174 boilerplate in the document.
 
@@ -46,10 +47,10 @@ def check_boilerplate(text: str, status: str, review: IetfReview) -> None:
     @param      status  The standards level of this document
     @param      review  The IETF Review document to add comments to
     """
-    uses_keywords = set(re.findall(KEYWORDS_PATTERN, text))
-    has_8174_boilerplate = set(re.findall(BOILERPLATE_8174_PATTERN, text))
-    has_2119_boilerplate = set(re.findall(BOILERPLATE_2119_PATTERN, text))
-    has_boilerplate_begin = set(re.findall(BOILERPLATE_BEGIN_PATTERN, text))
+    uses_keywords = set(re.findall(KEYWORDS_PATTERN, doc.orig))
+    has_8174_boilerplate = set(re.findall(BOILERPLATE_8174_PATTERN, doc.orig))
+    has_2119_boilerplate = set(re.findall(BOILERPLATE_2119_PATTERN, doc.orig))
+    has_boilerplate_begin = set(re.findall(BOILERPLATE_BEGIN_PATTERN, doc.orig))
 
     msg = None
     if uses_keywords:
@@ -59,9 +60,9 @@ def check_boilerplate(text: str, status: str, review: IetfReview) -> None:
         used_keywords = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
 
-        if status.lower() in ["informational", "experimental"]:
+        if doc.status.lower() in ["informational", "experimental"]:
             review.comment(
-                f"Document has {status} status, but uses the RFC2119 "
+                f"Document has {doc.status} status, but uses the RFC2119 "
                 f"{kw_text} {used_keywords}. Check if this is really "
                 f"necessary?"
             )
@@ -89,7 +90,7 @@ def check_boilerplate(text: str, status: str, review: IetfReview) -> None:
         review.comment(msg)
 
     if uses_keywords:
-        lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, text))
+        lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, doc.orig))
         if lc_not:
             lc_not_str = word_join(list(lc_not), prefix='"', suffix='"')
             review.comment(
@@ -99,7 +100,7 @@ def check_boilerplate(text: str, status: str, review: IetfReview) -> None:
             )
 
     sotm = ""
-    for line in text.splitlines(keepends=True):
+    for line in doc.orig_lines:
         if re.match(r"^\s+$", line):
             continue
         if len(sotm) == 0:

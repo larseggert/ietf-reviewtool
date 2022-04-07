@@ -1,4 +1,57 @@
 import textwrap
+import difflib
+import re
+
+from .doc import Doc
+from .util.docposition import DocPosition
+from .util.format import fmt_nit, fmt_comment
+
+
+def strip_nits_from_diff(diff: list) -> list:
+    """
+    Return a version of the passed diff with all lines related to nits removed.
+
+    @param      diff  The diff to strip nits from
+
+    @return     A diff with all nits removed.
+    """
+    prev = None
+    continue_again = False
+    result = []
+
+    for num, cur in enumerate(diff):
+        if continue_again:
+            continue_again = False
+            continue
+
+        kind = cur[0]
+
+        if cur in ["+ \n", "- \n"]:
+            prev = kind
+            continue
+
+        nxt = diff[num + 1] if num < len(diff) - 1 else None
+        nxt_kind = nxt[0] if nxt else None
+
+        if kind == "+":
+            if nxt_kind == "?":
+                continue_again = True
+                prev = kind
+                continue
+            if prev == "?":
+                prev = kind
+                continue
+
+        if kind == "?" and prev in ["+", "-"]:
+            prev = kind
+            continue
+
+        if kind == "-":
+            cur = re.sub(r".(.*)", r" \1", cur)
+
+        result.append(cur)
+        prev = kind
+    return result
 
 
 class IetfReview:
@@ -14,9 +67,18 @@ class IetfReview:
         )
     }
 
-    def __init__(self, width: int = 79):
+    def __init__(self, doc: Doc, width: int = 79):
         self.width = width
         self.__data = {"discuss": [], "comment": [], "nit": []}
+
+        diff = list(
+            difflib.ndiff(
+                doc.orig_lines, doc.current_lines, linejunk=None, charjunk=None
+            )
+        )
+        self.gather_nits(diff)
+        diff = strip_nits_from_diff(diff)
+        self.gather_comments(diff)
 
     def __add(self, content: str, kind: str, wrap: bool, end: str) -> None:
         assert isinstance(content, str)
@@ -103,3 +165,107 @@ class IetfReview:
                 )
             )
         return "\n".join(out) + "\n"
+
+    def gather_nits(self, diff: list) -> None:
+        """
+        Return a list of prefixed nits from the current diff.
+
+        @param      self  The IetfReview object
+        @param      diff  The diff to extract nits from
+
+        @return     None
+        """
+        changed = {"+": [], "-": []}
+        indicator = {"+": [], "-": []}
+        doc_pos = DocPosition()
+        prev = None
+
+        for num, cur in enumerate(diff):
+            # print(cur, end="")
+            kind = cur[0]
+
+            nxt = diff[num + 1] if num < len(diff) - 1 else None
+            nxt_kind = nxt[0] if nxt else None
+
+            if cur in ["+ \n", "- \n"]:
+                prev = kind
+                if nxt:
+                    continue
+
+            if kind in ["+", "-"] and nxt_kind == "?":
+                changed[kind].append(cur)
+
+            elif kind == "?" and prev in ["+", "-"]:
+                indicator[prev].append(cur)
+
+            elif kind in ["-"]:  # this would catch nits: ["+", "-"]:
+                changed[kind].append(cur)
+                indicator[kind].append(None)
+
+            elif kind == "-" and nxt_kind == "+":
+                changed[kind].append(cur)
+                indicator[kind].append(None)
+
+            elif kind == "+" and prev == "-":
+                changed[kind].append(cur)
+                indicator[kind].append(None)
+
+            elif changed["-"] or changed["+"]:
+                self.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
+
+            elif not nxt and kind != " ":
+                changed[kind].append(cur)
+
+            if nxt:
+                doc_pos.update(nxt, cur)
+
+            prev = kind
+
+        if changed["-"] or changed["+"]:
+            self.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
+
+    def gather_comments(self, diff: list) -> None:
+        """
+        Gather comments in diff into review.
+
+        @param      diff    A diff with nits removed (by strip_nits_from_diff)
+        @param      review  IETF Review object.
+        """
+        doc_pos = DocPosition()
+        item = {}
+
+        for num, cur in enumerate(diff):
+            nxt = diff[num + 1] if num < len(diff) - 1 else None
+
+            start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
+            if start and start.group(1):
+                if "cat" in item:
+                    getattr(self, item["cat"])(fmt_comment(item, doc_pos), wrap=False)
+                item["cat"] = start.group(1).lower()
+                item["ctx"] = []
+                item["ctx_ok"] = start.group(2) != ""
+                item["txt"] = []
+                item["txt_ok"] = False
+                if item["ctx_ok"]:
+                    cur = "+ " + start.group(2) + "\n"
+                else:
+                    continue
+
+            if "txt_ok" in item:
+                kind = cur[0]
+                if item["ctx_ok"] is False:
+                    if kind != " ":
+                        item["txt"].append(cur)
+                        item["ctx_ok"] = True
+                    else:
+                        item["ctx"].append(cur)
+                else:
+                    if kind != "+":
+                        item["txt_ok"] = True
+                    else:
+                        item["txt"].append(cur)
+
+                if item["txt_ok"] or nxt is None:
+                    getattr(self, item["cat"])(fmt_comment(item, doc_pos), wrap=False)
+
+            doc_pos.update(nxt, cur)
