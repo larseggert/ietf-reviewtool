@@ -752,6 +752,7 @@ def fetch_agenda(
 
     gotten = get_items(
         items,
+        log,
         state.datatracker,
         strip,
         fetch_writeups,

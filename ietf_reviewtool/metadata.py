@@ -45,7 +45,7 @@ def check_meta(
         review.comment(
             f"The document has {num2words.num2words(num_authors)} "
             "authors, which exceeds the "
-            "recommended author limit. I assume the sponsoring AD has "
+            "recommended author limit. Has the sponsoring AD "
             "agreed that this is appropriate?",
         )
 
