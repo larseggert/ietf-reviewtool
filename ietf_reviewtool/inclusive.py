@@ -56,15 +56,16 @@ def check_inclusivity(
             "for background and more guidance:"
         )
         comment_items = []
+        quote = "`" if review.mkd else '"'
         for name, match in result.items():
-            terms = word_join(match[0], prefix='"', suffix='"')
+            terms = word_join(match[0], prefix=quote, suffix=quote)
             msg = f'Term{"s" if len(match[0]) > 1 else ""} {terms}; '
             if match[2]:
                 msg += "alternatives might be "
-                msg += ", ".join([f'"{a}"' for a in match[2]])
+                msg += ", ".join([f"{quote}{a}{quote}" for a in match[2]])
             else:
                 msg += "but I have no suggestion for an alternative"
             if verbose:
-                msg += f' (matched "{name}" rule, pattern {match[1]})'
+                msg += f" (matched {quote}{name}{quote} rule, pattern {match[1]})"
             comment_items.append(msg)
         review.comment_bullets("Inclusive language", comment_header, comment_items)

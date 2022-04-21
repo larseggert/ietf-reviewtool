@@ -80,7 +80,9 @@ def check_grammar(
             pos += len(text[cur])
             cur += 1
 
-        nit = doc_pos.fmt_section_and_paragraph("nit")
+        nit = doc_pos.fmt_section_and_paragraph()
+        if review.mkd:
+            nit = f"#### {nit}"
         context = issue.context.lstrip(".")
         offset = issue.offsetInContext - (len(issue.context) - len(context))
         context = context.rstrip(".")
@@ -94,8 +96,12 @@ def check_grammar(
             context = context[cut:-cut]
             offset -= cut
 
+        if review.mkd:
+            nit += "```\n"
         nit += f"> {context}\n"
         nit += f"> {' ' * offset}{'^' * issue.errorLength}\n"
+        if review.mkd:
+            nit += "```\n"
 
         message = (
             issue.message.replace("“", '"')

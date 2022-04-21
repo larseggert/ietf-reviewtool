@@ -71,9 +71,9 @@ class IetfReview:
         )
     }
 
-    def __init__(self, doc: Doc, gen_md: bool, role: str, gh_id: str, width: int = 79):
+    def __init__(self, doc: Doc, gen_mkd: bool, role: str, gh_id: str, width: int = 79):
         self.width = width
-        self.gen_md = gen_md
+        self.mkd = gen_mkd
         self.role = role
         self.gh_id = gh_id
         self.doc = doc
@@ -158,62 +158,40 @@ class IetfReview:
         content = self.__bulletize(header, bullets)
         self.__add("nit", heading, content, wrap=False, end=end)
 
-    def __str_md(self) -> str:
+    def __str__(self) -> str:
         out = []
 
-        heading = ""
-        if self.role:
-            heading += f"# {self.role} r"
-        else:
-            heading += "# R"
-        heading += f"eview of {self.doc.name}-{self.doc.revision}\n"
-        out.append(heading)
-
-        if self.gh_id:
-            out.append(f"CC {self.gh_id}\n")
+        if self.mkd:
+            heading = ""
+            if self.role:
+                heading += f"# {self.role} r"
+            else:
+                heading += "# R"
+            heading += f"eview of {self.doc.name}-{self.doc.revision}\n"
+            out.append(heading)
+            if self.gh_id:
+                out.append(f"CC {self.gh_id}\n")
 
         for category, comments in self.__data.items():
             if not comments:
                 continue
 
             if category != "preface":
-                out.append(f"## {category.capitalize()}s\n")
+                if self.mkd:
+                    out.append(f"## {category.capitalize()}s\n")
+                else:
+                    out.append("-" * self.width)
+                    out.append(category.upper())
+                    out.append("-" * self.width + "\n")
 
             if self.boilerplate.get(category, None):
                 out.append(wrap_para(self.boilerplate[category], "\n", self.width))
 
             for heading, content in comments.items():
-                if heading:
+                if heading and self.mkd:
                     out.append(f"### {heading}\n")
                 out.extend(content)
         return "\n".join(out)
-
-    def __str__(self) -> str:
-        if self.gen_md:
-            return self.__str_md()
-
-        out = []
-        for category, comments in self.__data.items():
-            if not comments:
-                continue
-
-            if category != "preface":
-                out.append("-" * self.width)
-                out.append(category.upper())
-                out.append("-" * self.width + "\n")
-
-            if self.boilerplate.get(category, None):
-                out.append(wrap_para(self.boilerplate[category], "\n", self.width))
-
-            for _, content in comments.items():
-                out.extend(content)
-        return "\n".join(out)
-
-    def __or__(self, other):
-        for key, value in other.items():
-            if key in self.__data:
-                self.__data[key].extend(value)
-        return self
 
     def __bulletize(self, header: str, bullets: list[str]) -> str:
         """
@@ -234,6 +212,7 @@ class IetfReview:
                     initial_indent=" * ",
                     subsequent_indent="   ",
                     break_on_hyphens=False,
+                    break_long_words=False,
                 )
             )
         return "\n".join(out) + "\n"
@@ -251,6 +230,7 @@ class IetfReview:
         indicator: dict[str, list[str]] = {"+": [], "-": []}
         doc_pos = DocPosition()
         prev = None
+        heading_level = 4 if self.mkd else 0
 
         for num, cur in enumerate(diff):
             # print(cur, end="")
@@ -283,7 +263,11 @@ class IetfReview:
                 indicator[kind].append("")
 
             elif changed["-"] or changed["+"]:
-                self.nit("Typo", fmt_nit(changed, indicator, doc_pos), wrap=False)
+                self.nit(
+                    "Typos",
+                    fmt_nit(changed, indicator, doc_pos, heading_level),
+                    wrap=False,
+                )
 
             elif not nxt and kind != " ":
                 changed[kind].append(cur)
@@ -294,7 +278,11 @@ class IetfReview:
             prev = kind
 
         if changed["-"] or changed["+"]:
-            self.nit("Typo", fmt_nit(changed, indicator, doc_pos), wrap=False)
+            self.nit(
+                "Typos",
+                fmt_nit(changed, indicator, doc_pos, heading_level),
+                wrap=False,
+            )
 
     def gather_comments(self, diff: list) -> None:
         """
@@ -305,6 +293,7 @@ class IetfReview:
         """
         doc_pos = DocPosition()
         item: dict = {}
+        heading_level = 3 if self.mkd else 0
 
         for num, cur in enumerate(diff):
             nxt = diff[num + 1] if num < len(diff) - 1 else None
@@ -312,7 +301,9 @@ class IetfReview:
             start = re.search(r"^\+ (?:(DISCUSS|COMMENT|NIT):?)?\s*(.*)", cur)
             if start and start.group(1):
                 if "cat" in item:
-                    getattr(self, item["cat"])(fmt_comment(item, doc_pos), wrap=False)
+                    getattr(self, item["cat"])(
+                        fmt_comment(item, doc_pos, heading_level), wrap=False
+                    )
                 item["cat"] = start.group(1).lower()
                 item["ctx"] = []
                 item["ctx_ok"] = start.group(2) != ""
@@ -338,6 +329,8 @@ class IetfReview:
                         item["txt"].append(cur)
 
                 if item["txt_ok"] or nxt is None:
-                    getattr(self, item["cat"])(fmt_comment(item, doc_pos), wrap=False)
+                    getattr(self, item["cat"])(
+                        "", fmt_comment(item, doc_pos, heading_level), wrap=False
+                    )
 
             doc_pos.update(nxt, cur)

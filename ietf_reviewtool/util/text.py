@@ -283,4 +283,7 @@ def wrap_para(text: str, end: str, width: int) -> str:
 
     @return     Wrapped version of text followed by end.
     """
-    return textwrap.fill(text, width=width, break_on_hyphens=False) + end
+    return (
+        textwrap.fill(text, width=width, break_on_hyphens=False, break_long_words=False)
+        + end
+    )

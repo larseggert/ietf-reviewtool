@@ -40,6 +40,8 @@ def check_refs(
         r for r in doc.references["text"] if not untag(r).startswith(doc.name)
     ]
 
+    quote = "`" if review.mkd else ""
+
     # check for duplicates
     for kind in ["normative", "informative"]:
         if not doc.references[kind]:
@@ -50,7 +52,8 @@ def check_refs(
         if dupes:
             review.nit(
                 "Duplicate references",
-                f"Duplicate {kind} references: {word_join(list(dupes))}.",
+                f"Duplicate {kind} references: "
+                f"{word_join(list(dupes), prefix=quote, suffix=quote)}.",
             )
 
         dupes = duplicates(tgts)
@@ -60,7 +63,8 @@ def check_refs(
             tags = [t[0] for t in doc.references[kind] if t[1] in dupes]
             review.nit(
                 "Duplicate references",
-                f"Duplicate {kind} references to: {word_join(list(dupes))}.",
+                f"Duplicate {kind} references to: "
+                f"{word_join(list(dupes), prefix=quote, suffix=quote)}.",
             )
 
     norm = set(e[0] for e in doc.references["normative"])
@@ -72,17 +76,18 @@ def check_refs(
         review.nit(
             "Duplicate references",
             "Reference entries duplicated in both normative and "
-            f"informative sections: {word_join(list(norm & info))}.",
+            f"informative sections: "
+            f"{word_join(list(norm & info), prefix=quote, suffix=quote)}.",
         )
 
     if in_text - both:
-        ref_list = word_join(list(in_text - both))
+        ref_list = word_join(list(in_text - both), prefix=quote, suffix=quote)
         review.comment(
             "Missing references", f"No reference entries found for: {ref_list}."
         )
 
     if both - in_text:
-        ref_list = word_join(list(both - in_text))
+        ref_list = word_join(list(both - in_text), prefix=quote, suffix=quote)
         review.nit("Uncited references", f"Uncited references: {ref_list}.")
 
     for rel, rel_docs in doc.relationships.items():
@@ -94,8 +99,8 @@ def check_refs(
             if not in_normative and not in_informative:
                 review.comment(
                     "Uncited references",
-                    f"Document {rel} RFC{rel_doc}, but does not cite it as a "
-                    f"reference.",
+                    f"Document {rel} {quote}RFC{rel_doc}{quote}, "
+                    "but does not cite it as a reference.",
                 )
 
     level = doc.meta and (doc.meta["std_level"] or doc.meta["intended_std_level"])
@@ -120,7 +125,7 @@ def check_refs(
                     review.comment(
                         "DOWNREFs",
                         f"Possible DOWNREF from this {doc.status} doc "
-                        f"to {tag}. If so, the IESG needs to approve it.",
+                        f"to {quote}{tag}{quote}. If so, the IESG needs to approve it.",
                     )
                 continue
 
@@ -139,14 +144,14 @@ def check_refs(
                 if latest["rev"].startswith("rfc"):
                     review.nit(
                         "Outdated references",
-                        f"Document references {display_name}, but that "
-                        f"has been published as {latest['rev'].upper()}.",
+                        f"Document references {quote}{display_name}{quote}, but that "
+                        f"has been published as {quote}{latest['rev'].upper()}{quote}.",
                     )
                 else:
                     review.nit(
                         "Outdated references",
-                        f"Document references {docname}-{rev}, but "
-                        f"-{latest['rev']} is the latest "
+                        f"Document references {quote}{docname}-{rev}{quote}, but "
+                        f"{quote}-{latest['rev']}{quote} is the latest "
                         f"available revision.",
                     )
 
@@ -163,7 +168,7 @@ def check_refs(
                         review.comment(
                             "DOWNREFs",
                             f"Possible DOWNREF {tag} from this {level} "
-                            f"to {display_name}.",
+                            f"to {quote}{display_name}{quote}.",
                         )
                     else:
                         msg = f"DOWNREF {tag} from this {level} to "
@@ -191,12 +196,12 @@ def check_refs(
                     if "rfc" in obs_by:
                         ob_bys.append(obs_by["rfc"])
 
-                ob_rfcs = word_join(ob_bys, prefix="RFC")
+                ob_rfcs = word_join(ob_bys, prefix=f"{quote}RFC", suffix=quote)
                 review.nit(
                     "Outdated references",
-                    f"Reference {tag} to {display_name}, "
+                    f"Reference {quote}{tag}{quote} to {quote}{display_name}{quote}, "
                     f"which was obsoleted by {ob_rfcs} "
-                    f"(this may be on purpose).",
+                    "(this may be on purpose).",
                 )
 
 

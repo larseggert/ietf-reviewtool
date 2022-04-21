@@ -321,7 +321,7 @@ def thank_art_reviewer(
         if group["acronym"].lower() == thank_art.lower():
             review.preface(
                 "",
-                f'Thanks to {reviewer["name_from_draft"] or reviewer["name"]}'
+                f'Thanks to {reviewer["name_from_draft"] or reviewer["name"]} '
                 + f'for the {group["name"]} review ({art_review["external_url"]}).',
             )
 
@@ -341,13 +341,14 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
             except ValueError:
                 faulty.append(str(str(ip_literal)))
 
+    quote = "`" if review.mkd else '"'
     if faulty:
         msg = "Unparsable possible IP "
         if len(faulty) > 1:
             msg += "blocks or addresses: "
         else:
             msg += "block or address: "
-        msg += word_join(faulty, prefix='"', suffix='"') + "."
+        msg += word_join(faulty, prefix=quote, suffix=quote) + "."
         review.nit("IP addresses", msg)
 
     faulty = []
@@ -383,7 +384,7 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
         else:
             msg += "block or address"
         msg += " not inside RFC5737/RFC3849 example ranges: "
-        msg += word_join(faulty, prefix='"', suffix='"') + "."
+        msg += word_join(faulty, prefix=quote, suffix=quote) + "."
         review.comment("IP addresses", msg)
 
 
@@ -404,11 +405,12 @@ def check_html_entities(doc: Doc, review: IetfReview) -> None:
                 entities.extend(re.findall(r"(&#?\w+;)", line, flags=re.IGNORECASE))
 
         if entities:
+            quote = "`" if review.mkd else '"'
             review.nit(
                 "Stray characters",
                 "The text version of this document contains these HTML entities, "
                 "which might indicate issues with its XML source: "
-                f"{word_join(list(set(entities)))}",
+                f"{word_join(list(set(entities)), prefix=quote, suffix=quote)}",
             )
 
 
@@ -511,7 +513,7 @@ def validate_gh_id(_ctx, _param, value):
     """
     if isinstance(value, tuple):
         return value
-    if not re.match(r"@\w+", value):
+    if value != "" and not re.match(r"@\w+", value):
         raise click.BadParameter("GitHub user ID must be in the form '@username'")
     return value
 
@@ -587,7 +589,7 @@ def validate_gh_id(_ctx, _param, value):
 )
 @click.option(
     "--output-markdown",
-    "gen_md",
+    "gen_mkd",
     is_flag=True,
     help=(
         "Generate review in IETF Comments Markdown Format. "
@@ -622,7 +624,7 @@ def review_items(
     chk_tlp: bool,
     thank_art: str,
     grammar_skip_rules: str,
-    gen_md: bool,
+    gen_mkd: bool,
     role: str,
     gh_id: str,
 ) -> None:
@@ -662,7 +664,7 @@ def review_items(
             continue
 
         doc = Doc(item, log, state.datatracker)
-        review = IetfReview(doc, gen_md, role.strip(), gh_id.strip(), state.width)
+        review = IetfReview(doc, gen_mkd, role.strip(), gh_id.strip(), state.width)
 
         if chk_misc:
             check_html_entities(doc, review)
@@ -698,9 +700,11 @@ def review_items(
             review.comment("Note to self", "Ask about any chair changes.")
 
         if chk_grammar:
-            check_grammar(doc.current_lines, grammar_skip_rules, review, state.width, verbose)
+            check_grammar(
+                doc.current_lines, grammar_skip_rules, review, state.width, verbose
+            )
 
-        if gen_md:
+        if gen_mkd:
             review.note(
                 "",
                 'This review is formatted in the "IETF Comments" Markdown format, '
