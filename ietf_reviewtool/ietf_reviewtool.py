@@ -652,7 +652,7 @@ def review_items(
             review.comment("Note to self: Ask about any chair changes.")
 
         if chk_grammar:
-            check_grammar(doc.current, grammar_skip_rules, review, verbose)
+            check_grammar(doc.current_lines, grammar_skip_rules, review, verbose)
 
         print(review)
 

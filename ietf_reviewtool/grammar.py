@@ -11,7 +11,7 @@ from .util.text import unfold
 
 
 def check_grammar(
-    text: str,
+    text: list,
     grammar_skip_rules: str,
     review: IetfReview,
     show_rule_id: bool = False,
@@ -19,7 +19,7 @@ def check_grammar(
     """
     Check document grammar.
 
-    @param      text                The document text
+    @param      text                The document text (as lines)
     @param      grammar_skip_rules  The grammar rules to skip
     @param      review              The IETF review to comment upon
     @param      show_rule_id        Whether to show rule names in messages
