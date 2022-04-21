@@ -319,11 +319,10 @@ def thank_art_reviewer(
             continue
 
         if group["acronym"].lower() == thank_art.lower():
-            review.comment(
-                "Thanks to "
-                + (reviewer["name_from_draft"] or reviewer["name"])
-                + f" for their {group['name']} review "
-                f"({art_review['external_url']})."
+            review.preface(
+                "",
+                f'Thanks to {reviewer["name_from_draft"] or reviewer["name"]}'
+                + f'for the {group["name"]} review ({art_review["external_url"]}).',
             )
 
 
@@ -349,7 +348,7 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
         else:
             msg += "block or address: "
         msg += word_join(faulty, prefix='"', suffix='"') + "."
-        review.nit(msg)
+        review.nit("IP addresses", msg)
 
     faulty = []
     for ip_obj in result:
@@ -385,7 +384,7 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
             msg += "block or address"
         msg += " not inside RFC5737/RFC3849 example ranges: "
         msg += word_join(faulty, prefix='"', suffix='"') + "."
-        review.comment(msg)
+        review.comment("IP addresses", msg)
 
 
 def check_html_entities(doc: Doc, review: IetfReview) -> None:
@@ -406,9 +405,9 @@ def check_html_entities(doc: Doc, review: IetfReview) -> None:
 
         if entities:
             review.nit(
-                "The text version of this document contains "
-                "these HTML entities, which might indicate "
-                "issues with its XML source: "
+                "Stray characters",
+                "The text version of this document contains these HTML entities, "
+                "which might indicate issues with its XML source: "
                 f"{word_join(list(set(entities)))}",
             )
 
@@ -423,6 +422,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
     if result:
         review.nit_bullets(
+            "URLs",
             "These URLs point to tools.ietf.org, which is being deprecated:",
             result,
         )
@@ -434,7 +434,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
             result.append(url)
 
     if result:
-        review.nit_bullets("Found non-HTTP URLs in the document:", result)
+        review.nit_bullets("URLs", "Found non-HTTP URLs in the document:", result)
 
     reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
     result = []
@@ -443,7 +443,9 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
             result.append(url)
 
     if result:
-        review.nit_bullets("These URLs in the document did not return content:", result)
+        review.nit_bullets(
+            "URLs", "These URLs in the document did not return content:", result
+        )
 
     result = []
     for url in urls:
@@ -456,6 +458,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
     if result:
         review.nit_bullets(
+            "URLs",
             "These URLs in the document can probably be converted " "to HTTPS:",
             result,
         )
@@ -492,7 +495,25 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
             xml.etree.ElementTree.fromstring(text)
         except xml.etree.ElementTree.ParseError as err:
             print(text[err.position[0] - 2])
-            review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
+            review.nit("XML", f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
+
+
+def validate_gh_id(_ctx, _param, value):
+    """
+    Validate the --github-id parameter. See
+    https://click.palletsprojects.com/en/8.1.x/options/#callbacks-for-validation
+
+    @param      _ctx    The context
+    @param      _param  The parameter
+    @param      value   The value
+
+    @return     The value
+    """
+    if isinstance(value, tuple):
+        return value
+    if not re.match(r"@\w+", value):
+        raise click.BadParameter("GitHub user ID must be in the form '@username'")
+    return value
 
 
 @click.command("review", help="Extract review from named items.")
@@ -564,6 +585,28 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
     default="genart",
     help="Generate a thank-you for the given Area Review Team reviewer.",
 )
+@click.option(
+    "--output-markdown",
+    "gen_md",
+    is_flag=True,
+    help=(
+        "Generate review in IETF Comments Markdown Format. "
+        "See https://github.com/mnot/ietf-comments/blob/main/format.md"
+    ),
+)
+@click.option(
+    "--role",
+    "role",
+    default="",
+    help="Indicate the role you are reviewing this document in (if any).",
+)
+@click.option(
+    "--github-id",
+    "gh_id",
+    default="",
+    callback=validate_gh_id,
+    help='Your GitHub ID ("@username").',
+)
 @click.pass_obj
 def review_items(
     state: State,
@@ -579,6 +622,9 @@ def review_items(
     chk_tlp: bool,
     thank_art: str,
     grammar_skip_rules: str,
+    gen_md: bool,
+    role: str,
+    gh_id: str,
 ) -> None:
     """
     Extract reviews from named items.
@@ -616,7 +662,7 @@ def review_items(
             continue
 
         doc = Doc(item, log, state.datatracker)
-        review = IetfReview(doc, state.width)
+        review = IetfReview(doc, gen_md, role.strip(), gh_id.strip(), state.width)
 
         if chk_misc:
             check_html_entities(doc, review)
@@ -649,10 +695,19 @@ def review_items(
         thank_art_reviewer(doc, review, thank_art, state.datatracker)
 
         if doc.name.startswith("charter-"):
-            review.comment("Note to self: Ask about any chair changes.")
+            review.comment("Note to self", "Ask about any chair changes.")
 
         if chk_grammar:
-            check_grammar(doc.current_lines, grammar_skip_rules, review, verbose)
+            check_grammar(doc.current_lines, grammar_skip_rules, review, state.width, verbose)
+
+        if gen_md:
+            review.note(
+                "",
+                'This review is formatted in the "IETF Comments" Markdown format, '
+                "see https://github.com/mnot/ietf-comments. Generated by the "
+                '"IETF Review Tool", see '
+                "https://github.com/larseggert/ietf-reviewtool.",
+            )
 
         print(review)
 

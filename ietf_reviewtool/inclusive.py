@@ -67,4 +67,4 @@ def check_inclusivity(
             if verbose:
                 msg += f' (matched "{name}" rule, pattern {match[1]})'
             comment_items.append(msg)
-        review.comment_bullets(comment_header, comment_items)
+        review.comment_bullets("Inclusive language", comment_header, comment_items)

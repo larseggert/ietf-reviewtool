@@ -28,6 +28,7 @@ def check_meta(
     level = doc.meta["std_level"] or doc.meta["intended_std_level"]
     if not level:
         review.discuss(
+            "Missing RFC status",
             "Datatracker does not record an intended RFC status for this document.",
         )
     else:
@@ -36,6 +37,7 @@ def check_meta(
             or doc.status.lower() != "standards track"
         ):
             review.discuss(
+                "Unclear RFC status",
                 f'Intended RFC status in datatracker is "{level}", but '
                 f'document says "{doc.status}".',
             )
@@ -43,6 +45,7 @@ def check_meta(
     num_authors = len(doc.meta["authors"])
     if num_authors > 5:
         review.comment(
+            "Too many authors",
             f"The document has {num2words.num2words(num_authors)} "
             "authors, which exceeds the "
             "recommended author limit. Has the sponsoring AD "
@@ -55,16 +58,19 @@ def check_meta(
     if iana_review_state:
         if re.match(r".*Not\s+OK", iana_review_state, flags=re.IGNORECASE):
             review.comment(
+                "IANA",
                 "This document seems to have unresolved IANA issues.",
             )
         elif re.match(r".*Review\s+Needed", iana_review_state, flags=re.IGNORECASE):
             review.comment(
+                "IANA",
                 "The IANA review of this document seems to not have " "concluded yet.",
             )
 
     consensus = doc.meta["consensus"] if "consensus" in doc.meta else None
     if consensus is None:
         review.comment(
+            "Unclear consensus",
             "The datatracker state does not indicate whether the "
             "consensus boilerplate should be included in this document.",
         )
@@ -72,6 +78,7 @@ def check_meta(
     stream = doc.meta["stream"] if "stream" in doc.meta else None
     if stream != "IETF":
         review.comment(
+            "Unusual stream",
             "This does not seem to be an IETF-stream document.",
         )
 
@@ -84,6 +91,7 @@ def check_meta(
             if missing_docs:
                 updates = word_join(rel_docs, prefix="RFC")
                 review.discuss(
+                    'Missing "Updates" explanation',
                     f"This document updates {updates}, but does not seem "
                     f"to include explanatory text about this in the "
                     f"abstract.",
@@ -98,6 +106,7 @@ def check_meta(
             )
             if not relationship_ok(doc.status, level):
                 review.discuss(
+                    f"{rel.capitalize()} issue",
                     f"This {doc.status} document {rel} RFC{rel_doc}, "
                     f"which is {level}.",
                 )

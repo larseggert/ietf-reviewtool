@@ -49,13 +49,17 @@ def check_refs(
         dupes = duplicates(tags)
         if dupes:
             review.nit(
+                "Duplicate references",
                 f"Duplicate {kind} references: {word_join(list(dupes))}.",
             )
 
         dupes = duplicates(tgts)
+        if None in dupes:
+            dupes.remove(None)
         if dupes:
             tags = [t[0] for t in doc.references[kind] if t[1] in dupes]
             review.nit(
+                "Duplicate references",
                 f"Duplicate {kind} references to: {word_join(list(dupes))}.",
             )
 
@@ -66,17 +70,20 @@ def check_refs(
 
     if norm & info:
         review.nit(
+            "Duplicate references",
             "Reference entries duplicated in both normative and "
             f"informative sections: {word_join(list(norm & info))}.",
         )
 
     if in_text - both:
         ref_list = word_join(list(in_text - both))
-        review.comment(f"No reference entries found for: {ref_list}.")
+        review.comment(
+            "Missing references", f"No reference entries found for: {ref_list}."
+        )
 
     if both - in_text:
         ref_list = word_join(list(both - in_text))
-        review.nit(f"Uncited references: {ref_list}.")
+        review.nit("Uncited references", f"Uncited references: {ref_list}.")
 
     for rel, rel_docs in doc.relationships.items():
         for rel_doc in rel_docs:
@@ -86,6 +93,7 @@ def check_refs(
 
             if not in_normative and not in_informative:
                 review.comment(
+                    "Uncited references",
                     f"Document {rel} RFC{rel_doc}, but does not cite it as a "
                     f"reference.",
                 )
@@ -110,6 +118,7 @@ def check_refs(
                     "experimental",
                 ]:
                     review.comment(
+                        "DOWNREFs",
                         f"Possible DOWNREF from this {doc.status} doc "
                         f"to {tag}. If so, the IESG needs to approve it.",
                     )
@@ -129,11 +138,13 @@ def check_refs(
             if latest and latest["rev"] and rev and latest["rev"] > rev:
                 if latest["rev"].startswith("rfc"):
                     review.nit(
+                        "Outdated references",
                         f"Document references {display_name}, but that "
                         f"has been published as {latest['rev'].upper()}.",
                     )
                 else:
                     review.nit(
+                        "Outdated references",
                         f"Document references {docname}-{rev}, but "
                         f"-{latest['rev']} is the latest "
                         f"available revision.",
@@ -150,6 +161,7 @@ def check_refs(
                 ):
                     if ref_level is None:
                         review.comment(
+                            "DOWNREFs",
                             f"Possible DOWNREF {tag} from this {level} "
                             f"to {display_name}.",
                         )
@@ -165,7 +177,7 @@ def check_refs(
                             "the Last Call and also seems to not appear "
                             "in the DOWNREF registry.)"
                         )
-                        review.comment(msg)
+                        review.comment("DOWNREFs", msg)
 
             obsoleted_by = fetch_dt(
                 datatracker,
@@ -181,6 +193,7 @@ def check_refs(
 
                 ob_rfcs = word_join(ob_bys, prefix="RFC")
                 review.nit(
+                    "Outdated references",
                     f"Reference {tag} to {display_name}, "
                     f"which was obsoleted by {ob_rfcs} "
                     f"(this may be on purpose).",

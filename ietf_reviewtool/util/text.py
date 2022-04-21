@@ -4,6 +4,7 @@ import logging
 import re
 import urllib.parse
 
+import textwrap
 import urlextract  # type: ignore
 
 
@@ -233,6 +234,22 @@ def untag(tag: str) -> str:
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
 
 
+def item_part(item: str, part: int) -> str:
+    """
+    Return a part of a item name.
+
+    @param      item  The item to return the base name for
+    @param      part  The part to return
+
+    @return     The indicated name part of the item
+    """
+    return re.sub(
+        r"^(.*/)?(.*[^-]+)-(\d+)+\.(txt)?$",
+        lambda x: f"{x[part]}",
+        item,
+    )
+
+
 def basename(item: str) -> str:
     """
     Return the base name of a given item by stripping the path, the version information
@@ -242,4 +259,28 @@ def basename(item: str) -> str:
 
     @return     The base name of the item
     """
-    return re.sub(r"^(?:.*/)?(.*[^-]+)(-\d+)+(?:\.txt)?$", r"\1", item)
+    return item_part(item, 2)
+
+
+def revision(item: str) -> str:
+    """
+    Return the revision number of a given item by stripping the path, the name
+    and the txt suffix.
+
+    @param      item  The item to return the base name for
+
+    @return     The base name of the item
+    """
+    return item_part(item, 3)
+
+
+def wrap_para(text: str, end: str, width: int) -> str:
+    """
+    Return a wrapped version of the text, ending with end.
+
+    @param      text   The text to wrap
+    @param      end    The end to add to the text
+
+    @return     Wrapped version of text followed by end.
+    """
+    return textwrap.fill(text, width=width, break_on_hyphens=False) + end

@@ -7,6 +7,7 @@ import textwrap
 from .doc import Doc
 from .util.docposition import DocPosition
 from .util.format import fmt_nit, fmt_comment
+from .util.text import wrap_para
 
 
 def strip_nits_from_diff(diff: list) -> list:
@@ -70,9 +71,19 @@ class IetfReview:
         )
     }
 
-    def __init__(self, doc: Doc, width: int = 79):
+    def __init__(self, doc: Doc, gen_md: bool, role: str, gh_id: str, width: int = 79):
         self.width = width
-        self.__data: dict[str, list[str]] = {"discuss": [], "comment": [], "nit": []}
+        self.gen_md = gen_md
+        self.role = role
+        self.gh_id = gh_id
+        self.doc = doc
+        self.__data: dict[str, dict[str, list[str]]] = {
+            "preface": {},
+            "discuss": {},
+            "comment": {},
+            "nit": {},
+            "note": {},
+        }
 
         diff = list(
             difflib.ndiff(
@@ -83,50 +94,119 @@ class IetfReview:
         diff = strip_nits_from_diff(diff)
         self.gather_comments(diff)
 
-    def __add(self, content: str, kind: str, wrap: bool, end: str) -> None:
+    def __add(
+        self, kind: str, heading: str, content: str, wrap: bool, end: str
+    ) -> None:
         assert isinstance(content, str)
         if wrap:
-            content = self.__wrap_para(content, end)
-        self.__data[kind].append(content)
+            content = wrap_para(content, end, self.width)
+        if kind not in self.__data:
+            self.__data[kind] = {}
+        if heading in self.__data[kind]:
+            self.__data[kind][heading].append(content)
+        else:
+            self.__data[kind][heading] = [content]
 
-    def discuss(self, content: str, wrap: bool = True, end: str = "\n") -> None:
+    def discuss(
+        self, heading: str, content: str, wrap: bool = True, end: str = "\n"
+    ) -> None:
         "Add a discuss position to the review."
-        self.__add(content, "discuss", wrap, end)
+        self.__add("discuss", heading, content, wrap, end)
 
-    def comment(self, content: str, wrap: bool = True, end: str = "\n") -> None:
+    def preface(
+        self, heading: str, content: str, wrap: bool = True, end: str = "\n"
+    ) -> None:
+        "Add a preface to the review."
+        self.__add("preface", heading, content, wrap, end)
+
+    def comment(
+        self, heading: str, content: str, wrap: bool = True, end: str = "\n"
+    ) -> None:
         "Add a comment to the review."
-        self.__add(content, "comment", wrap, end)
+        self.__add("comment", heading, content, wrap, end)
 
-    def nit(self, content: str, wrap: bool = True, end: str = "\n") -> None:
+    def nit(
+        self, heading: str, content: str, wrap: bool = True, end: str = "\n"
+    ) -> None:
         "Add a nit to the review."
-        self.__add(content, "nit", wrap, end)
+        self.__add("nit", heading, content, wrap, end)
 
-    def discuss_bullets(self, header: str, bullets: list[str], end: str = "\n") -> None:
+    def note(
+        self, heading: str, content: str, wrap: bool = True, end: str = "\n"
+    ) -> None:
+        "Add a note to the review."
+        self.__add("note", heading, content, wrap, end)
+
+    def discuss_bullets(
+        self, heading: str, header: str, bullets: list[str], end: str = "\n"
+    ) -> None:
         "Add a discuss bullet list to the review."
         content = self.__bulletize(header, bullets)
-        self.__add(content, "discuss", wrap=False, end=end)
+        self.__add("discuss", heading, content, wrap=False, end=end)
 
-    def comment_bullets(self, header: str, bullets: list[str], end: str = "\n") -> None:
+    def comment_bullets(
+        self, heading: str, header: str, bullets: list[str], end: str = "\n"
+    ) -> None:
         "Add a comment bullet list to the review."
         content = self.__bulletize(header, bullets)
-        self.__add(content, "comment", wrap=False, end=end)
+        self.__add("comment", heading, content, wrap=False, end=end)
 
-    def nit_bullets(self, header: str, bullets: list[str], end: str = "\n") -> None:
+    def nit_bullets(
+        self, heading: str, header: str, bullets: list[str], end: str = "\n"
+    ) -> None:
         "Add a nit bullet list to the review."
         content = self.__bulletize(header, bullets)
-        self.__add(content, "nit", wrap=False, end=end)
+        self.__add("nit", heading, content, wrap=False, end=end)
+
+    def __str_md(self) -> str:
+        out = []
+
+        heading = ""
+        if self.role:
+            heading += f"# {self.role} r"
+        else:
+            heading += "# R"
+        heading += f"eview of {self.doc.name}-{self.doc.revision}\n"
+        out.append(heading)
+
+        if self.gh_id:
+            out.append(f"CC {self.gh_id}\n")
+
+        for category, comments in self.__data.items():
+            if not comments:
+                continue
+
+            if category != "preface":
+                out.append(f"## {category.capitalize()}s\n")
+
+            if self.boilerplate.get(category, None):
+                out.append(wrap_para(self.boilerplate[category], "\n", self.width))
+
+            for heading, content in comments.items():
+                if heading:
+                    out.append(f"### {heading}\n")
+                out.extend(content)
+        return "\n".join(out)
 
     def __str__(self) -> str:
+        if self.gen_md:
+            return self.__str_md()
+
         out = []
-        for category, content in self.__data.items():
-            if not content:
+        for category, comments in self.__data.items():
+            if not comments:
                 continue
-            out.append("\n" + "-" * self.width)
-            out.append(category.upper())
-            out.append("-" * self.width + "\n")
+
+            if category != "preface":
+                out.append("-" * self.width)
+                out.append(category.upper())
+                out.append("-" * self.width + "\n")
+
             if self.boilerplate.get(category, None):
-                out.append(self.__wrap_para(self.boilerplate[category], end="\n"))
-            out.extend(content)
+                out.append(wrap_para(self.boilerplate[category], "\n", self.width))
+
+            for _, content in comments.items():
+                out.extend(content)
         return "\n".join(out)
 
     def __or__(self, other):
@@ -134,17 +214,6 @@ class IetfReview:
             if key in self.__data:
                 self.__data[key].extend(value)
         return self
-
-    def __wrap_para(self, text: str, end: str) -> str:
-        """
-        Return a wrapped version of the text, ending with end.
-
-        @param      text   The text to wrap
-        @param      end    The end to add to the text
-
-        @return     Wrapped version of text followed by end.
-        """
-        return textwrap.fill(text, width=self.width, break_on_hyphens=False) + end
 
     def __bulletize(self, header: str, bullets: list[str]) -> str:
         """
@@ -156,7 +225,7 @@ class IetfReview:
         @return     Wrapped version of text followed by end, formatted as bullet
                     item.
         """
-        out = [self.__wrap_para(header, end="\n")]
+        out = [wrap_para(header, "\n", self.width)]
         for bullet in bullets:
             out.append(
                 textwrap.fill(
@@ -214,7 +283,7 @@ class IetfReview:
                 indicator[kind].append("")
 
             elif changed["-"] or changed["+"]:
-                self.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
+                self.nit("Typo", fmt_nit(changed, indicator, doc_pos), wrap=False)
 
             elif not nxt and kind != " ":
                 changed[kind].append(cur)
@@ -225,7 +294,7 @@ class IetfReview:
             prev = kind
 
         if changed["-"] or changed["+"]:
-            self.nit(fmt_nit(changed, indicator, doc_pos), wrap=False)
+            self.nit("Typo", fmt_nit(changed, indicator, doc_pos), wrap=False)
 
     def gather_comments(self, diff: list) -> None:
         """
