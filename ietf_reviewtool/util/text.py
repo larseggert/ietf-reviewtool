@@ -91,9 +91,9 @@ def extract_ips(text: str) -> set:
     sec_nrs = re.findall(r"^\d+(?:\.\d+)+", text, flags=re.MULTILINE)
     ips = {i for i in ips if i not in sec_nrs}
 
-    # drop prefixes that do not contain at last one "." or ":'", those are almost always
-    # false hits
-    ips = {i for i in ips if "/" not in i or "." in i or ":" in i}
+    # drop prefixes that do not contain at last one "." or at least two ":'", those are
+    # almost always false hits
+    ips = {i for i in ips if "/" not in i or "." in i or i.count(":") < 2}
 
     return ips
 
