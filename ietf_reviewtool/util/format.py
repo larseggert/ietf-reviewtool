@@ -67,24 +67,27 @@ def fmt_comment(item: dict, doc_pos: DocPosition, mkd_heading_level: int) -> str
     """
     result = [fmt_heading(doc_pos, mkd_heading_level)]
 
-    # strip empty lines at beginning and end
-    for index in [-1, 0]:
-        while re.search(r"^\s*$", item["ctx"][index]) is not None:
-            item["ctx"].pop(index)
+    if item["ctx"]:
+        # strip empty lines at beginning and end
+        for index in [-1, 0]:
+            while re.search(r"^\s*$", item["ctx"][index]) is not None:
+                item["ctx"].pop(index)
 
-    if mkd_heading_level > 0:
-        result.append("```\n")
-        result.extend(item["ctx"])
-    else:
-        result.extend([re.sub(r".(.*)", r">\1", x) for x in item["ctx"]])
-        if item["ctx"]:
-            result.append("\n")
-    if mkd_heading_level > 0:
-        result.append("```\n")
+        if mkd_heading_level > 0:
+            result.append("```\n")
+            result.extend(item["ctx"])
+        else:
+            result.extend([re.sub(r".(.*)", r">\1", x) for x in item["ctx"]])
+            if item["ctx"]:
+                result.append("\n")
+        if mkd_heading_level > 0:
+            result.append("```")
+
+    result.append("\n")
     txt = "".join([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
 
     result.append(txt)
     if item["ctx"]:
-        doc_pos.para_num -= 1  # don't count this as a paragraph
+        doc_pos.para_num -= 1  # don't count the comment paragraph
     item.clear()
     return "".join(result)
