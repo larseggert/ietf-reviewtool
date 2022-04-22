@@ -74,10 +74,10 @@ def extract_ips(text: str) -> set:
     @return     List of IP blocks.
     """
 
-    # find all IPs
-    return set(
+    # find IPs not preceded by the word "section" (those are almost always false hits)
+    ips = set(
         re.findall(
-            r"""\b(?:
+            r"""(?<![Ss]ection\s)\b(?:
              (?:[\da-f]{1,4}(?::[\da-f]{0,4})+)(?:/[\d]+)?|
              (?:(?:\d{1,3}\.){3}\d{1,3}(?:/[\d\.]+)?)|
              (?:(?:\d{1,3}\.){0,3}\d{1,3}/[\d\.]+)
@@ -86,6 +86,17 @@ def extract_ips(text: str) -> set:
             flags=re.IGNORECASE | re.VERBOSE,
         )
     )
+
+    # find all section numbers and remove them from the set of hits
+    sec_nrs = re.findall(r"^\d+(?:\.\d+)+", text, flags=re.MULTILINE)
+    print(ips)
+    ips = {i for i in ips if i not in sec_nrs}
+
+    # drop prefixes that do not contain at last one "." or ":'", those are almost always
+    # false hits
+    ips = {i for i in ips if "/" not in i or "." in i or ":" in i}
+
+    return ips
 
 
 def extract_urls(
