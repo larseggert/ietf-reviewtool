@@ -96,10 +96,12 @@ def check_grammar(
             context = context[cut:-cut]
             offset -= cut
 
+        quote = "> "
         if review.mkd:
             nit += "```\n"
-        nit += f"> {context}\n"
-        nit += f"> {' ' * offset}{'^' * issue.errorLength}\n"
+            quote = ""
+        nit += f"{quote}{context}\n"
+        nit += f"{quote}{' ' * offset}{'^' * issue.errorLength}\n"
         if review.mkd:
             nit += "```\n"
 
