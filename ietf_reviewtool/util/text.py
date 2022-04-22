@@ -89,7 +89,6 @@ def extract_ips(text: str) -> set:
 
     # find all section numbers and remove them from the set of hits
     sec_nrs = re.findall(r"^\d+(?:\.\d+)+", text, flags=re.MULTILINE)
-    print(ips)
     ips = {i for i in ips if i not in sec_nrs}
 
     # drop prefixes that do not contain at last one "." or ":'", those are almost always
