@@ -178,7 +178,11 @@ class IetfReview:
 
             if category != "preface":
                 if self.mkd:
-                    out.append(f"## {category.capitalize()}s\n")
+                    out.append(
+                        f"## {category.capitalize()}"
+                        f"{'s' if not category.endswith('s') else ''}\n"
+                    )
+
                 else:
                     out.append("-" * self.width)
                     out.append(category.upper())
@@ -302,7 +306,7 @@ class IetfReview:
             if start and start.group(1):
                 if "cat" in item:
                     getattr(self, item["cat"])(
-                        fmt_comment(item, doc_pos, heading_level), wrap=False
+                        "", fmt_comment(item, doc_pos, heading_level), wrap=False
                     )
                 item["cat"] = start.group(1).lower()
                 item["ctx"] = []
