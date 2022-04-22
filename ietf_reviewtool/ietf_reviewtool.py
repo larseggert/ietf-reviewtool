@@ -205,8 +205,8 @@ def fetch(
     @param      strip             Whether to strip the fetched items
     @param      fetch_writeups    Whether to also fetch related writeups
     @param      fetch_xml         Whether to also fetch XML sources
-    @param      extract_markdown  Whether to attempt to extract Markdown from
-                                  fetched XML
+    @param      extract_markdown  Whether to attempt to extract Markdown from fetched
+                                  XML
     """
     get_items(
         items,
@@ -232,8 +232,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
     Run strip_pagination over the named items.
 
     @param      items     The items to strip
-    @param      in_place  Whether to overwrite the item, or save a ".stripped"
-                          copy.
+    @param      in_place  Whether to overwrite the item, or save a ".stripped" copy.
 
     @return     -
     """
@@ -259,6 +258,16 @@ def strip_items(items: list, in_place: bool = False) -> None:
 def thank_art_reviewer(
     doc: Doc, review: IetfReview, thank_art: str, datatracker: str
 ) -> None:
+    """
+    Add a thank-you note to the member of the indicated review team.
+
+    @param      doc          The document text
+    @param      review       IETF Review object
+    @param      thank_art    The acronym of a review team
+    @param      datatracker  The datatracker URL
+
+    @return     None
+    """
     art_reviews = fetch_dt(
         datatracker,
         "doc/reviewassignmentdocevent/?doc__name=" + doc.name,
@@ -326,7 +335,16 @@ def thank_art_reviewer(
             )
 
 
-def check_ips(doc: Doc, review: IetfReview) -> None:
+def check_ips(doc: Doc, review: IetfReview, verbose: bool) -> None:
+    """
+    Check the IP addresses and blocks in the document.
+
+    @param      doc      The document text
+    @param      review   IETF Review object
+    @param      verbose  Whether to include debug information
+
+    @return     None
+    """
     result = []
     faulty = []
     for ip_literal in extract_ips(doc.orig):
@@ -342,7 +360,7 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
                 faulty.append(str(str(ip_literal)))
 
     quote = "`" if review.mkd else '"'
-    if faulty:
+    if faulty and verbose:
         msg = "Unparsable possible IP "
         if len(faulty) > 1:
             msg += "blocks or addresses: "
@@ -389,6 +407,14 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
 
 
 def check_html_entities(doc: Doc, review: IetfReview) -> None:
+    """
+    Warn if the document contains HTML entities.
+
+    @param      doc     The document text
+    @param      review  IETF Review object
+
+    @return     None
+    """
     unescaped = html.unescape(doc.orig)
     if doc.orig != unescaped:
         entities = []
@@ -415,6 +441,15 @@ def check_html_entities(doc: Doc, review: IetfReview) -> None:
 
 
 def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
+    """
+    Check the reachability and various other aspects of URLs in the document/
+
+    @param      doc      The document text
+    @param      review   IETF Review object
+    @param      verbose  Whether to be verbose during the checks
+
+    @return     None
+    """
     result = []
     urls = extract_urls(doc.orig, log)
 
@@ -470,8 +505,10 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     Check any XML in the document for issues
 
-    @param      doc     The XML document (as a string)
+    @param      doc     The document text
     @param      review  IETF Review object
+
+    @return     None
     """
     snippets = re.finditer(r"^(.*)<\?xml\s", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
@@ -692,7 +729,7 @@ def review_items(
             check_inclusivity(doc, review, log, verbose)
 
         if chk_ips:
-            check_ips(doc, review)
+            check_ips(doc, review, verbose)
 
         thank_art_reviewer(doc, review, thank_art, state.datatracker)
 
@@ -775,8 +812,8 @@ def fetch_agenda(
     @param      strip             Whether to strip fetched agenda items
     @param      fetch_writeups    Whether to also fetch related writeups
     @param      fetch_xml         Whether to also fetch XML sources of items
-    @param      extract_markdown  Whether to attempt to extract Markdown from
-                                  XML sources
+    @param      extract_markdown  Whether to attempt to extract Markdown from XML
+                                  sources
     """
     agenda = get_current_agenda(state.datatracker, log)
     if "telechat-date" not in agenda:
