@@ -167,15 +167,18 @@ def check_refs(
                     if ref_level is None:
                         review.comment(
                             "DOWNREFs",
-                            f"Possible DOWNREF {tag} from this {level} "
+                            f"Possible DOWNREF {quote}{tag}{quote} from this {level} "
                             f"to {quote}{display_name}{quote}.",
                         )
                     else:
-                        msg = f"DOWNREF {tag} from this {level} to "
+                        msg = f"DOWNREF {quote}{tag}{quote} from this {level} to "
                         if ref_level != "unknown":
-                            msg += f"{ref_level} {display_name}."
+                            msg += f"{ref_level} {quote}{display_name}{quote}."
                         else:
-                            msg += f"{display_name} of unknown standards level."
+                            msg += (
+                                f"{quote}{display_name}{quote}"
+                                + " of unknown standards level."
+                            )
                         msg += (
                             " (For IESG discussion. "
                             "It seems this DOWNREF was not mentioned in "
