@@ -60,6 +60,7 @@ class DocPosition:
         pat = {True: r"^[\- ] +$", False: r"^\s*$"}
         if re.search(pat[is_diff], cur):
             self.para_num += 1
+            return
 
         # track sections
         pot_sec = SECTION_PATTERN.search(cur)
