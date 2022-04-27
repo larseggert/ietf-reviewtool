@@ -205,8 +205,8 @@ def fetch(
     @param      strip             Whether to strip the fetched items
     @param      fetch_writeups    Whether to also fetch related writeups
     @param      fetch_xml         Whether to also fetch XML sources
-    @param      extract_markdown  Whether to attempt to extract Markdown from
-                                  fetched XML
+    @param      extract_markdown  Whether to attempt to extract Markdown from fetched
+                                  XML
     """
     get_items(
         items,
@@ -232,8 +232,7 @@ def strip_items(items: list, in_place: bool = False) -> None:
     Run strip_pagination over the named items.
 
     @param      items     The items to strip
-    @param      in_place  Whether to overwrite the item, or save a ".stripped"
-                          copy.
+    @param      in_place  Whether to overwrite the item, or save a ".stripped" copy.
 
     @return     -
     """
@@ -259,6 +258,16 @@ def strip_items(items: list, in_place: bool = False) -> None:
 def thank_art_reviewer(
     doc: Doc, review: IetfReview, thank_art: str, datatracker: str
 ) -> None:
+    """
+    Add a thank-you note to the member of the indicated review team.
+
+    @param      doc          The document text
+    @param      review       IETF Review object
+    @param      thank_art    The acronym of a review team
+    @param      datatracker  The datatracker URL
+
+    @return     None
+    """
     art_reviews = fetch_dt(
         datatracker,
         "doc/reviewassignmentdocevent/?doc__name=" + doc.name,
@@ -319,15 +328,23 @@ def thank_art_reviewer(
             continue
 
         if group["acronym"].lower() == thank_art.lower():
-            review.comment(
-                "Thanks to "
-                + (reviewer["name_from_draft"] or reviewer["name"])
-                + f" for their {group['name']} review "
-                f"({art_review['external_url']})."
+            review.preface(
+                "",
+                f'Thanks to {reviewer["name_from_draft"] or reviewer["name"]} '
+                + f'for the {group["name"]} review ({art_review["external_url"]}).',
             )
 
 
-def check_ips(doc: Doc, review: IetfReview) -> None:
+def check_ips(doc: Doc, review: IetfReview, verbose: bool) -> None:
+    """
+    Check the IP addresses and blocks in the document.
+
+    @param      doc      The document text
+    @param      review   IETF Review object
+    @param      verbose  Whether to include debug information
+
+    @return     None
+    """
     result = []
     faulty = []
     for ip_literal in extract_ips(doc.orig):
@@ -342,14 +359,15 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
             except ValueError:
                 faulty.append(str(str(ip_literal)))
 
-    if faulty:
+    quote = "`" if review.mkd else '"'
+    if faulty and verbose:
         msg = "Unparsable possible IP "
         if len(faulty) > 1:
             msg += "blocks or addresses: "
         else:
             msg += "block or address: "
-        msg += word_join(faulty, prefix='"', suffix='"') + "."
-        review.nit(msg)
+        msg += word_join(faulty, prefix=quote, suffix=quote) + "."
+        review.nit("IP addresses", msg)
 
     faulty = []
     for ip_obj in result:
@@ -384,11 +402,19 @@ def check_ips(doc: Doc, review: IetfReview) -> None:
         else:
             msg += "block or address"
         msg += " not inside RFC5737/RFC3849 example ranges: "
-        msg += word_join(faulty, prefix='"', suffix='"') + "."
-        review.comment(msg)
+        msg += word_join(faulty, prefix=quote, suffix=quote) + "."
+        review.comment("IP addresses", msg)
 
 
 def check_html_entities(doc: Doc, review: IetfReview) -> None:
+    """
+    Warn if the document contains HTML entities.
+
+    @param      doc     The document text
+    @param      review  IETF Review object
+
+    @return     None
+    """
     unescaped = html.unescape(doc.orig)
     if doc.orig != unescaped:
         entities = []
@@ -405,15 +431,25 @@ def check_html_entities(doc: Doc, review: IetfReview) -> None:
                 entities.extend(re.findall(r"(&#?\w+;)", line, flags=re.IGNORECASE))
 
         if entities:
+            quote = "`" if review.mkd else '"'
             review.nit(
-                "The text version of this document contains "
-                "these HTML entities, which might indicate "
-                "issues with its XML source: "
-                f"{word_join(list(set(entities)))}",
+                "Stray characters",
+                "The text version of this document contains these HTML entities, "
+                "which might indicate issues with its XML source: "
+                f"{word_join(list(set(entities)), prefix=quote, suffix=quote)}",
             )
 
 
 def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
+    """
+    Check the reachability and various other aspects of URLs in the document/
+
+    @param      doc      The document text
+    @param      review   IETF Review object
+    @param      verbose  Whether to be verbose during the checks
+
+    @return     None
+    """
     result = []
     urls = extract_urls(doc.orig, log)
 
@@ -423,6 +459,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
     if result:
         review.nit_bullets(
+            "URLs",
             "These URLs point to tools.ietf.org, which is being deprecated:",
             result,
         )
@@ -434,7 +471,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
             result.append(url)
 
     if result:
-        review.nit_bullets("Found non-HTTP URLs in the document:", result)
+        review.nit_bullets("URLs", "Found non-HTTP URLs in the document:", result)
 
     reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
     result = []
@@ -443,7 +480,9 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
             result.append(url)
 
     if result:
-        review.nit_bullets("These URLs in the document did not return content:", result)
+        review.nit_bullets(
+            "URLs", "These URLs in the document did not return content:", result
+        )
 
     result = []
     for url in urls:
@@ -456,6 +495,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
     if result:
         review.nit_bullets(
+            "URLs",
             "These URLs in the document can probably be converted " "to HTTPS:",
             result,
         )
@@ -465,8 +505,10 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     Check any XML in the document for issues
 
-    @param      doc     The XML document (as a string)
+    @param      doc     The document text
     @param      review  IETF Review object
+
+    @return     None
     """
     snippets = re.finditer(r"^(.*)<\?xml\s", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
@@ -492,7 +534,25 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
             xml.etree.ElementTree.fromstring(text)
         except xml.etree.ElementTree.ParseError as err:
             print(text[err.position[0] - 2])
-            review.nit(f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
+            review.nit("XML", f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
+
+
+def validate_gh_id(_ctx, _param, value):
+    """
+    Validate the --github-id parameter. See
+    https://click.palletsprojects.com/en/8.1.x/options/#callbacks-for-validation
+
+    @param      _ctx    The context
+    @param      _param  The parameter
+    @param      value   The value
+
+    @return     The value
+    """
+    if isinstance(value, tuple):
+        return value
+    if value != "" and not re.match(r"@\w+", value):
+        raise click.BadParameter("GitHub user ID must be in the form '@username'")
+    return value
 
 
 @click.command("review", help="Extract review from named items.")
@@ -564,6 +624,28 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
     default="genart",
     help="Generate a thank-you for the given Area Review Team reviewer.",
 )
+@click.option(
+    "--output-markdown",
+    "gen_mkd",
+    is_flag=True,
+    help=(
+        "Generate review in IETF Comments Markdown Format. "
+        "See https://github.com/mnot/ietf-comments/blob/main/format.md"
+    ),
+)
+@click.option(
+    "--role",
+    "role",
+    default="",
+    help="Indicate the role you are reviewing this document in (if any).",
+)
+@click.option(
+    "--github-id",
+    "gh_id",
+    default="",
+    callback=validate_gh_id,
+    help='Your GitHub ID ("@username").',
+)
 @click.pass_obj
 def review_items(
     state: State,
@@ -579,6 +661,9 @@ def review_items(
     chk_tlp: bool,
     thank_art: str,
     grammar_skip_rules: str,
+    gen_mkd: bool,
+    role: str,
+    gh_id: str,
 ) -> None:
     """
     Extract reviews from named items.
@@ -616,7 +701,7 @@ def review_items(
             continue
 
         doc = Doc(item, log, state.datatracker)
-        review = IetfReview(doc, state.width)
+        review = IetfReview(doc, gen_mkd, role.strip(), gh_id.strip(), state.width)
 
         if chk_misc:
             check_html_entities(doc, review)
@@ -644,15 +729,26 @@ def review_items(
             check_inclusivity(doc, review, log, verbose)
 
         if chk_ips:
-            check_ips(doc, review)
+            check_ips(doc, review, verbose)
 
         thank_art_reviewer(doc, review, thank_art, state.datatracker)
 
         if doc.name.startswith("charter-"):
-            review.comment("Note to self: Ask about any chair changes.")
+            review.comment("Note to self", "Ask about any chair changes.")
 
         if chk_grammar:
-            check_grammar(doc.current_lines, grammar_skip_rules, review, verbose)
+            check_grammar(
+                doc.current_lines, grammar_skip_rules, review, state.width, verbose
+            )
+
+        if gen_mkd:
+            review.note(
+                "",
+                'This review is formatted in the "IETF Comments" Markdown format, '
+                "see https://github.com/mnot/ietf-comments. Generated by the "
+                '"IETF Review Tool", see '
+                "https://github.com/larseggert/ietf-reviewtool.",
+            )
 
         print(review)
 
@@ -716,8 +812,8 @@ def fetch_agenda(
     @param      strip             Whether to strip fetched agenda items
     @param      fetch_writeups    Whether to also fetch related writeups
     @param      fetch_xml         Whether to also fetch XML sources of items
-    @param      extract_markdown  Whether to attempt to extract Markdown from
-                                  XML sources
+    @param      extract_markdown  Whether to attempt to extract Markdown from XML
+                                  sources
     """
     agenda = get_current_agenda(state.datatracker, log)
     if "telechat-date" not in agenda:

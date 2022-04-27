@@ -7,13 +7,14 @@ import language_tool_python  # type: ignore
 
 from .review import IetfReview
 from .util.docposition import DocPosition
-from .util.text import unfold
+from .util.text import unfold, wrap_para
 
 
 def check_grammar(
     text: list,
     grammar_skip_rules: str,
     review: IetfReview,
+    width: int,
     show_rule_id: bool = False,
 ) -> None:
     """
@@ -79,7 +80,9 @@ def check_grammar(
             pos += len(text[cur])
             cur += 1
 
-        review.nit(doc_pos.fmt_section_and_paragraph("nit"), end="")
+        nit = doc_pos.fmt_section_and_paragraph()
+        if review.mkd:
+            nit = f"#### {nit}"
         context = issue.context.lstrip(".")
         offset = issue.offsetInContext - (len(issue.context) - len(context))
         context = context.rstrip(".")
@@ -93,8 +96,14 @@ def check_grammar(
             context = context[cut:-cut]
             offset -= cut
 
-        review.nit("> " + context, wrap=False, end="")
-        review.nit("> " + " " * offset + "^" * issue.errorLength, wrap=False, end="")
+        quote = "> "
+        if review.mkd:
+            nit += "```\n"
+            quote = ""
+        nit += f"{quote}{context}\n"
+        nit += f"{quote}{' ' * offset}{'^' * issue.errorLength}\n"
+        if review.mkd:
+            nit += "```\n"
 
         message = (
             issue.message.replace("“", '"')
@@ -111,4 +120,4 @@ def check_grammar(
         if show_rule_id:
             message = f"{message} [{issue.ruleId}]"
 
-        review.nit(message)
+        review.nit("Grammar/style", nit + wrap_para(message, "\n", width), wrap=False)

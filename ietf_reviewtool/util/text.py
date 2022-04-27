@@ -4,6 +4,7 @@ import logging
 import re
 import urllib.parse
 
+import textwrap
 import urlextract  # type: ignore
 
 
@@ -73,10 +74,10 @@ def extract_ips(text: str) -> set:
     @return     List of IP blocks.
     """
 
-    # find all IPs
-    return set(
+    # find IPs not preceded by the word "section" (those are almost always false hits)
+    ips = set(
         re.findall(
-            r"""\b(?:
+            r"""(?<![Ss]ection\s)\b(?:
              (?:[\da-f]{1,4}(?::[\da-f]{0,4})+)(?:/[\d]+)?|
              (?:(?:\d{1,3}\.){3}\d{1,3}(?:/[\d\.]+)?)|
              (?:(?:\d{1,3}\.){0,3}\d{1,3}/[\d\.]+)
@@ -85,6 +86,16 @@ def extract_ips(text: str) -> set:
             flags=re.IGNORECASE | re.VERBOSE,
         )
     )
+
+    # find all section numbers and remove them from the set of hits
+    sec_nrs = re.findall(r"^\d+(?:\.\d+)+", text, flags=re.MULTILINE)
+    ips = {i for i in ips if i not in sec_nrs}
+
+    # drop prefixes that do not contain at last one "." or at least two ":'", those are
+    # almost always false hits
+    ips = {i for i in ips if "/" not in i or "." in i or i.count(":") < 2}
+
+    return ips
 
 
 def extract_urls(
@@ -233,6 +244,22 @@ def untag(tag: str) -> str:
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
 
 
+def item_part(item: str, part: int) -> str:
+    """
+    Return a part of a item name.
+
+    @param      item  The item to return the base name for
+    @param      part  The part to return
+
+    @return     The indicated name part of the item
+    """
+    return re.sub(
+        r"^(.*/)?(.*[^-]+)-(\d+)+\.(txt)?$",
+        lambda x: f"{x[part]}",
+        item,
+    )
+
+
 def basename(item: str) -> str:
     """
     Return the base name of a given item by stripping the path, the version information
@@ -242,4 +269,31 @@ def basename(item: str) -> str:
 
     @return     The base name of the item
     """
-    return re.sub(r"^(?:.*/)?(.*[^-]+)(-\d+)+(?:\.txt)?$", r"\1", item)
+    return item_part(item, 2)
+
+
+def revision(item: str) -> str:
+    """
+    Return the revision number of a given item by stripping the path, the name
+    and the txt suffix.
+
+    @param      item  The item to return the base name for
+
+    @return     The base name of the item
+    """
+    return item_part(item, 3)
+
+
+def wrap_para(text: str, end: str, width: int) -> str:
+    """
+    Return a wrapped version of the text, ending with end.
+
+    @param      text   The text to wrap
+    @param      end    The end to add to the text
+
+    @return     Wrapped version of text followed by end.
+    """
+    return (
+        textwrap.fill(text, width=width, break_on_hyphens=False, break_long_words=False)
+        + end
+    )

@@ -30,13 +30,14 @@ def check_tlp(doc: Doc, review: IetfReview) -> None:
         )
         if doc.status.lower() == "standards track":
             msg += " And it cannot be published on the Standards Track."
-        review.discuss(msg)
+        review.discuss("Boilerplate", msg)
 
     if re.search(r"Simplified\s+BSD\s+License", text, flags=re.IGNORECASE):
         review.nit(
+            "Boilerplate",
             'Document still refers to the "Simplified BSD License", which '
             "was corrected in the TLP on September 21, 2021. It should "
-            'instead refer to the "Revised BSD License".'
+            'instead refer to the "Revised BSD License".',
         )
 
 
@@ -64,9 +65,10 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
 
         if doc.status.lower() in ["informational", "experimental"]:
             review.comment(
+                "Boilerplate",
                 f"Document has {doc.status} status, but uses the RFC2119 "
                 f"{kw_text} {used_keywords_str}. Check if this is really "
-                f"necessary?"
+                f"necessary?",
             )
 
         if not has_8174_boilerplate:
@@ -89,16 +91,17 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
                 msg += "text with a beginning similar to the RFC2119 boilerplate."
 
     if msg:
-        review.comment(msg)
+        review.comment("Boilerplate", msg)
 
     if uses_keywords:
         lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, doc.orig))
         if lc_not:
             lc_not_str = word_join(list(lc_not), prefix='"', suffix='"')
             review.comment(
+                "RFC2119 style",
                 f'Using lowercase "not" together with an uppercase '
                 f"RFC2119 keyword is not acceptable usage. Found: "
-                f"{lc_not_str}"
+                f"{lc_not_str}",
             )
 
     sotm = ""
@@ -122,8 +125,9 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
         sotm = re.sub(TLP_6A_PATTERN, r"", sotm)
     else:
         review.comment(
+            "Boilerplate",
             'TLP Section 6.a "Submission Compliance for '
-            'Internet-Drafts" boilerplate text seems to have issues.'
+            'Internet-Drafts" boilerplate text seems to have issues.',
         )
 
     idg_issues = False
@@ -134,42 +138,52 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
         elif required:
             idg_issues = True
     if idg_issues and not re.search(COPYRIGHT_ALT_STREAMS, sotm):
-        review.comment("I-D Guidelines boilerplate text seems to have issues.")
+        review.comment(
+            "Boilerplate",
+            "I-D Guidelines boilerplate text seems to have issues.",
+        )
 
     if re.search(COPYRIGHT_IETF, sotm):
         sotm = re.sub(COPYRIGHT_IETF, r"", sotm)
     elif re.search(COPYRIGHT_ALT_STREAMS, sotm):
         sotm = re.sub(COPYRIGHT_ALT_STREAMS, r"", sotm)
         review.comment(
-            'Document contains a TLP Section 6.b.ii "alternate streams" ' "boilerplate."
+            "Boilerplate",
+            'Document contains a TLP Section 6.b.ii "alternate streams" '
+            "boilerplate.",
         )
     else:
         review.comment(
+            "Boilerplate",
             'TLP Section 6.b "Copyright and License Notice" boilerplate '
-            "text seems to have issues."
+            "text seems to have issues.",
         )
 
     if re.search(NO_MOD_RFC, sotm):
         sotm = re.sub(NO_MOD_RFC, r"", sotm)
         review.comment(
+            "Boilerplate",
             "Document limits derivative works and/or RFC publication with "
             "a TLP Section 6.c.i boilerplate.",
         )
     elif re.search(NO_MOD_NO_RFC, sotm):
         sotm = re.sub(NO_MOD_NO_RFC, r"", sotm)
         review.comment(
+            "Boilerplate",
             "Document limits derivative works and/or RFC publication with "
             "a TLP Section 6.c.ii boilerplate.",
         )
     elif re.search(PRE_5378, sotm):
         sotm = re.sub(PRE_5378, r"", sotm)
         review.comment(
+            "Boilerplate",
             'Document has a TLP Section 6.c.iii "pre-5378" boilerplate. '
             "Is this really needed?",
         )
 
     if sotm:
         review.nit(
+            "Boilerplate",
             f'Found stray text in boilerplate: "{sotm.strip()}"',
         )
 
