@@ -253,11 +253,12 @@ def item_part(item: str, part: int) -> str:
 
     @return     The indicated name part of the item
     """
-    return re.sub(
-        r"^(.*/)?(.*[^-]+)-(\d+)+\.(txt)?$",
-        lambda x: f"{x[part]}",
+    result = re.search(
+        r"^(.*/)?([\w\-.+]+?)(?:-(\d+))+(?:\.(txt|xml))?$",
         item,
     )
+
+    return result.group(part) if result else ""
 
 
 def basename(item: str) -> str:
