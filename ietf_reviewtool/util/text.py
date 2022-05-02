@@ -285,6 +285,17 @@ def revision(item: str) -> str:
     return item_part(item, 3)
 
 
+def path(item: str) -> str:
+    """
+    Return the path of a given item.
+
+    @param      item  The item to return the base name for
+
+    @return     The path of the item
+    """
+    return item_part(item, 1)
+
+
 def wrap_para(text: str, end: str, width: int) -> str:
     """
     Return a wrapped version of the text, ending with end.

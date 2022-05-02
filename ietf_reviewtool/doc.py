@@ -7,7 +7,7 @@ import tempfile
 
 from .util.docposition import SECTION_PATTERN
 from .util.fetch import get_items, fetch_meta
-from .util.text import basename, revision, unfold, untag, extract_urls
+from .util.text import basename, revision, path, unfold, untag, extract_urls
 from .util.utils import read
 
 
@@ -28,6 +28,7 @@ class Doc:
     def __init__(self, item: str, log: logging.Logger, datatracker: str):
         self.name = basename(item)
         self.revision = revision(item)
+        self.path = path(item)
         with tempfile.TemporaryDirectory() as tmp:
             current_directory = os.getcwd()
             log.debug("tmp dir %s", tmp)
