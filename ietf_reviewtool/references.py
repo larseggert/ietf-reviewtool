@@ -1,6 +1,7 @@
 """ietf-reviewtool references module"""
 
 import logging
+import os
 import re
 
 from .doc import Doc
@@ -27,6 +28,9 @@ def check_refs(
     @return     { description_of_the_return_value }
     """
     downrefs_in_registry = fetch_downrefs(datatracker, log)
+    current_directory = os.getcwd()
+    if doc.path:
+        os.chdir(doc.path)
     docs_in_lc = (
         fetch_docs_in_last_call_text(
             doc.meta["name"] + "-" + doc.meta["rev"] + ".txt", log
@@ -34,6 +38,8 @@ def check_refs(
         if doc.meta
         else []
     )
+    if doc.path:
+        os.chdir(current_directory)
 
     # remove self-mentions from extracted references in the text
     doc.references["text"] = [
