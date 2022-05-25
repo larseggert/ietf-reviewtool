@@ -30,6 +30,8 @@ import os
 import re
 import xml.etree.ElementTree
 
+from typing import Union
+
 import click
 
 from .agenda import get_current_agenda, get_items_on_agenda
@@ -355,19 +357,26 @@ def check_ips(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
     @return     None
     """
-    result = []
+    result: list[
+        Union[
+            ipaddress.IPv4Address,
+            ipaddress.IPv6Address,
+            ipaddress.IPv4Network,
+            ipaddress.IPv6Network,
+        ]
+    ] = []
     faulty = []
     for ip_literal in extract_ips(doc.orig):
         if "/" in ip_literal:
             try:
-                result.append(str(ipaddress.ip_network(ip_literal)))
+                result.append(ipaddress.ip_network(ip_literal))
             except ValueError:
-                faulty.append(str(str(ip_literal)))
+                faulty.append(str(ip_literal))
         else:
             try:
-                result.append(str(ipaddress.ip_address(ip_literal)))
+                result.append(ipaddress.ip_address(ip_literal))
             except ValueError:
-                faulty.append(str(str(ip_literal)))
+                faulty.append(str(ip_literal))
 
     quote = "`" if review.mkd else '"'
     if faulty and verbose:
