@@ -277,6 +277,7 @@ def thank_art_reviewer(
         log.warning("Could not fetch ART reviews for %s", doc.name)
         return
 
+    thanked = set()
     for rev_assignment in art_reviews:
         if rev_assignment["type"] != "closed_review_assignment":
             continue
@@ -327,7 +328,16 @@ def thank_art_reviewer(
             log.warning("Could not fetch ART for %s", doc.name)
             continue
 
+        if art_review["id"] in thanked:
+            log.warning(
+                "Already thanked %s for %s review", reviewer["name"], group["name"]
+            )
+            continue
+
         if group["acronym"].lower() == thank_art.lower():
+            # remember we thanked for this
+            thanked.add(art_review["id"])
+
             review.preface(
                 "",
                 f'Thanks to {reviewer["name_from_draft"] or reviewer["name"]} '
