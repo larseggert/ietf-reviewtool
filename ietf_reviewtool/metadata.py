@@ -98,11 +98,9 @@ def check_meta(
                 )
 
         for rel_doc in rel_docs:
-            doc.meta = fetch_meta(datatracker, "rfc" + rel_doc, log)
+            meta = fetch_meta(datatracker, "rfc" + rel_doc, log)
             level = (
-                doc.meta["std_level"] or doc.meta["intended_std_level"]
-                if doc.meta
-                else "Unknown"
+                meta["std_level"] or meta["intended_std_level"] if meta else "Unknown"
             )
             if not relationship_ok(doc.status, level):
                 review.discuss(
