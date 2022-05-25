@@ -139,10 +139,10 @@ def check_refs(
             rev = None
             if draft_components:
                 docname = draft_components.group(1)
-                rev = draft_components.group(2)
+                rev = basename(draft_components.group(2))
             else:
                 docname = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
-            ref_meta = fetch_meta(datatracker, basename(docname), log)
+            ref_meta = fetch_meta(datatracker, docname, log)
             display_name = re.sub(r"rfc", r"RFC", docname)
 
             latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
