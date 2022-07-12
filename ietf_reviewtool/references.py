@@ -161,7 +161,7 @@ def check_refs(
                         f"available revision.",
                     )
 
-            if doc.status.lower() not in ["informational", "experimental"]:
+            if ref_meta and doc.status.lower() not in ["informational", "experimental"]:
                 ref_level = (
                     ref_meta["std_level"] or ref_meta["intended_std_level"] or "unknown"
                 )
@@ -242,8 +242,8 @@ def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bo
             "unknown": 0,
         }
 
-        if ref_level == "best current practice":
-            return rank[level] < 1
+        if level == "best current practice":
+            return rank[level] < rank["proposed standard"]
 
         return rank[level] > rank[ref_level]
 

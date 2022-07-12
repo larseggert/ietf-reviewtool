@@ -43,7 +43,7 @@ from .references import check_refs
 from .review import IetfReview
 from .doc import Doc
 
-from .util.fetch import fetch_url, fetch_dt, fetch_init_cache, get_items
+from .util.fetch import fetch_url, fetch_dt, get_items
 from .util.text import (
     word_join,
     extract_ips,
@@ -120,7 +120,6 @@ def cli(
     datatracker = re.sub(r"/+$", "", datatracker)
     ctx.obj = State(datatracker, verbose, default, width)
     log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
-    fetch_init_cache(log)
 
 
 @click.command("extract-urls", help="Extract URLs from items.")
@@ -211,7 +210,7 @@ def fetch(
                                   XML
     """
     get_items(
-        items,
+        list(items),
         log,
         state.datatracker,
         strip,
@@ -495,7 +494,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
     result = []
     for url in urls:
-        if reachability[url] is None:
+        if reachability[url] == "":
             result.append(url)
 
     if result:
@@ -515,7 +514,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     if result:
         review.nit_bullets(
             "URLs",
-            "These URLs in the document can probably be converted " "to HTTPS:",
+            "These URLs in the document can probably be converted to HTTPS:",
             result,
         )
 

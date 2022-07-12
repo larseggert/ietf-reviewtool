@@ -27,7 +27,6 @@ irt = "ietf_reviewtool.ietf_reviewtool:cli"
 ietf-reviewtool = "ietf_reviewtool.ietf_reviewtool:cli"
 
 [tool.pylint.messages_control]
-disable = "C0330, C0326"
 # TODO: these are very high and should be gradually reduced during refactoring
 max-args = 15
 max-bool-expr = 10

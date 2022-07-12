@@ -1,6 +1,8 @@
 """ietf-reviewtool fetch module"""
 
+import base64
 import datetime
+import gzip
 import json
 import logging
 import os
@@ -8,8 +10,6 @@ import re
 import urllib.request
 
 import appdirs  # type: ignore
-import base64
-import gzip
 import requests
 import requests_cache
 
@@ -30,6 +30,9 @@ def fetch_init_cache(log: logging.Logger) -> None:
     requests_cache.install_cache(
         cache_name=os.path.join(cache, "ietf-reviewtool"),
         backend="sqlite",
+        allowable_codes=[200],
+        stale_if_error=False,
+        match_headers=True,
         expire_after=datetime.timedelta(days=30),
     )
 
@@ -79,23 +82,20 @@ def fetch_url(
                     "Chrome/90.0.4430.72 Safari/537.36"
                 )
             }
-            if use_cache is False:
-                with requests_cache.disabled():
-                    response = requests.request(
-                        method,
-                        url,
-                        allow_redirects=True,
-                        timeout=20,
-                        headers=headers,
-                    )
+            if use_cache:
+                if requests_cache.is_installed() is False:
+                    fetch_init_cache(log)
             else:
-                response = requests.request(
-                    method,
-                    url,
-                    allow_redirects=True,
-                    timeout=20,
-                    headers=headers,
-                )
+                if requests_cache.is_installed():
+                    requests_cache.uninstall_cache()
+
+            response = requests.request(
+                method,
+                url,
+                allow_redirects=True,
+                timeout=20,
+                headers=headers,
+            )
             response.raise_for_status()
         except requests.exceptions.RequestException as err:
             log.debug("%s -> %s", url, err)
@@ -105,7 +105,7 @@ def fetch_url(
                 method = "GET"
                 continue
             return ""
-        return response.text
+        return response.text if method != "HEAD" else response
 
 
 def fetch_dt(datatracker: str, query: str, log: logging.Logger) -> dict:
@@ -286,7 +286,7 @@ def get_items(
             slug = "conflrev" if which == "conflict-review" else "statchg"
             target = fetch_dt(
                 datatracker,
-                f"doc/relateddocument/?relationship__slug={slug}&target__name=" + doc,
+                f"doc/relateddocument/?relationship__slug={slug}&target__name={doc}",
                 log,
             )
             if not target:
@@ -296,11 +296,11 @@ def get_items(
             if not docalias:
                 log.warning("cannot find docalias for %s", target[0]["target"])
                 continue
-            doc = fetch_dt(datatracker, docalias["document"], log)
-            if not doc:
+            alias = fetch_dt(datatracker, docalias["document"], log)
+            if not alias:
                 log.warning("cannot find doc for %s", docalias["document"])
                 continue
-            items.append(f"{doc['name']}-{doc['rev']}.txt")
+            items.append(f"{alias['name']}-{alias['rev']}.txt")
             do_strip = False
         # else:
         #     die(f"Unknown item type: {item}", log)

@@ -42,7 +42,7 @@ class Doc:
             self.current = read(item, log)
             if not self.orig:
                 log.error(
-                    "No original for %s, cannot review, " "only performing checks",
+                    "No original for %s, cannot review, only performing checks",
                     item,
                 )
         self.orig_lines = self.orig.splitlines(keepends=True)

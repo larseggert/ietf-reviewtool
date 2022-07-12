@@ -75,7 +75,7 @@ def check_grammar(
     cur = 0
     pos = 0
     for issue in issues:
-        while pos + len(text[cur + 1]) < issue.offset:
+        while pos + len(text[cur]) <= issue.offset:
             doc_pos.update(text[cur + 1], text[cur], is_diff=False)
             pos += len(text[cur])
             cur += 1

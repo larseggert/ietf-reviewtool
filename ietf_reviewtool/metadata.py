@@ -57,14 +57,16 @@ def check_meta(
     )
     if iana_review_state:
         if re.match(r".*Not\s+OK", iana_review_state, flags=re.IGNORECASE):
-            review.comment(
+            review.discuss(
                 "IANA",
-                "This document seems to have unresolved IANA issues.",
+                "This document seems to have unresolved IANA issues. "
+                "Holding a DISCUSS for IANA, so we can determine next steps during "
+                "the telechat.",
             )
         elif re.match(r".*Review\s+Needed", iana_review_state, flags=re.IGNORECASE):
             review.comment(
                 "IANA",
-                "The IANA review of this document seems to not have " "concluded yet.",
+                "The IANA review of this document seems to not have concluded yet.",
             )
 
     consensus = doc.meta["consensus"] if "consensus" in doc.meta else None
