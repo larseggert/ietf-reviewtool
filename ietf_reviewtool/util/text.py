@@ -50,18 +50,22 @@ def unfold(text: str) -> str:
 
     @return     The unfolded version of the text.
     """
+
+    def remove_spaces(match):
+        if len(match.groups()) == 3:
+            return match.group(1) + re.sub(r"\s+", "", match.group(2)) + match.group(3)
+        return match.group(0)
+
     rand = r"bYYO2hxg2Bg4HhwEsbJQSSucukxfAbAIcDrPu5dw"
 
     folded = re.sub(r"[\r\f]", r"", text)
     folded = re.sub(r"\n{2,}\s*", rand, folded)
     folded = re.sub(r"^\s+", r"", folded, flags=re.MULTILINE)
-    # folded = re.sub(
-    #     r"([^a-z\d])([a-z]{2,})://", r"\1\2://", folded, flags=re.IGNORECASE
-    # )
     folded = re.sub(r"([\-/])\n([^\(])", r"\1\2", folded)
     folded = re.sub(r"\n", r" ", folded)
     folded = re.sub(rand, r"\n\n", folded)
-
+    # remove newlines from URLs enclosed in <>
+    folded = re.sub(r"(.*<)(\w*?://[^>]*?)(>.*)", remove_spaces, folded)
     return folded
 
 
