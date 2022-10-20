@@ -3,6 +3,7 @@
 import logging
 import re
 import urllib.parse
+import os
 
 import textwrap
 import urlextract  # type: ignore
@@ -125,7 +126,7 @@ def extract_urls(
     text = unfold(text)
     urls = []
     for url in extractor.gen_urls(text):
-        url = url.rstrip(".\"]'>;,")
+        url = url.rstrip(".\"]'>;,)")
         # if not re.search(r"://", url):
         #     url = "http://" + url
         if re.match(r"[\d\.:a-f]+", url, flags=re.IGNORECASE):
@@ -248,33 +249,17 @@ def untag(tag: str) -> str:
     return re.sub(r"^\[(.*)\]$", r"\1", tag)
 
 
-def item_part(item: str, part: int) -> str:
-    """
-    Return a part of a item name.
-
-    @param      item  The item to return the base name for
-    @param      part  The part to return
-
-    @return     The indicated name part of the item
-    """
-    result = re.search(
-        r"^(.*/)?([\w\-.+]+?)(?:-(\d+))+(?:\.(txt|xml))?$",
-        item,
-    )
-
-    return result.group(part) if result else ""
-
-
 def basename(item: str) -> str:
     """
-    Return the base name of a given item by stripping the path, the version information
-    and the txt suffix.
+    Return the base name of a given item by stripping the path and the extension.
 
     @param      item  The item to return the base name for
 
     @return     The base name of the item
     """
-    return item_part(item, 2)
+    item = os.path.splitext(os.path.basename(item))[0]
+    rev = revision(item)
+    return item.removesuffix("-" + rev)
 
 
 def revision(item: str) -> str:
@@ -286,18 +271,8 @@ def revision(item: str) -> str:
 
     @return     The base name of the item
     """
-    return item_part(item, 3)
-
-
-def path(item: str) -> str:
-    """
-    Return the path of a given item.
-
-    @param      item  The item to return the base name for
-
-    @return     The path of the item
-    """
-    return item_part(item, 1)
+    result = re.search(r".*-(\d+)(?:\.\w+)?$", item)
+    return result.group(1) if result else ""
 
 
 def wrap_para(text: str, end: str, width: int) -> str:

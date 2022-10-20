@@ -472,13 +472,13 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     urls = extract_urls(doc.orig, log)
 
     for url in urls:
-        if re.search(r"://tools\.ietf\.org", url, flags=re.IGNORECASE):
+        if re.search(r"tools\.ietf\.org", url, flags=re.IGNORECASE):
             result.append(url)
 
     if result:
         review.nit_bullets(
             "URLs",
-            "These URLs point to tools.ietf.org, which is being deprecated:",
+            "These URLs point to tools.ietf.org, which has been taken out of service:",
             result,
         )
         urls -= set(result)

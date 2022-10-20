@@ -73,7 +73,7 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
 
         if not has_8174_boilerplate:
             msg = (
-                f"This document uses the RFC2119 {kw_text} {used_keywords}, "
+                f"This document uses the RFC2119 {kw_text} {used_keywords_str}, "
                 f"but does not contain the recommended RFC8174 boilerplate."
             )
             if has_2119_boilerplate:
