@@ -530,7 +530,7 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     snippets = re.finditer(r"^(.*)<\?xml\s", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
-        start = re.search(r"<\s*([\w:]+)", doc.orig[snip.start() :])
+        start = re.search(r"<\s*([\w:-]+)", doc.orig[snip.start() :])
         if not start:
             log.warning("cannot find an XML start tag")
             continue
