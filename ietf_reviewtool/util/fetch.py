@@ -279,7 +279,11 @@ def get_items(
             do_strip = False
         elif match:
             which = match[1]
-            doc = re.sub(which + r"-(.*)", r"draft-\1", item)
+            if which == "conflict-review":
+                doc = re.sub(which + r"-(.*)", r"draft-\1", item)
+            else:
+                # FIXME: figure out how to download status change text
+                continue
             text = get_writeups(datatracker, doc, log)
             # in-progress conflict-reviews/status-changes are not in the cache
             doc = basename(doc)
