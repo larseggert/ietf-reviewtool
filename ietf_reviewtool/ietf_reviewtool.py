@@ -543,6 +543,10 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
             continue
 
         text = doc.orig[snip.start() : snip.start() + end.end()]
+        # undo RFC 8792 single backslash strategy line-wrapping
+        # TODO: add support for double backslash strategy
+        text = re.sub(r"\\$\n^\s*", "", text, flags=re.MULTILINE)
+
         if snip.group(1):
             prefix = snip.group(1)
             # log.debug('XML prefix "%s"', prefix)
