@@ -551,8 +551,9 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
         try:
             xml.etree.ElementTree.fromstring(text)
         except xml.etree.ElementTree.ParseError as err:
-            print(text[err.position[0] - 2])
-            review.nit("XML", f'XML issue: "{err}":\n> {text[err.position[0] - 2]}')
+            review.nit(
+                "XML", f'XML issue: "{err}"\n> {text[err.position[0] - 2]}\n', False
+            )
 
 
 def validate_gh_id(_ctx, _param, value):
