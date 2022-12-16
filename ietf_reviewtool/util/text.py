@@ -8,6 +8,9 @@ import os
 import textwrap
 import urlextract  # type: ignore
 
+extractor = urlextract.URLExtract()
+extractor.update_when_older(7)  # update TLDs when older than 7 days
+
 
 def normalize_ws(string: str) -> str:
     """
@@ -121,14 +124,18 @@ def extract_urls(
     """
 
     # find all URLs
-    extractor = urlextract.URLExtract()
-    extractor.update_when_older(7)  # update TLDs when older than 7 days
     text = unfold(text)
+    try:
+        extracted_urls = extractor.find_urls(
+            text=text, with_schema_only=True, only_unique=True
+        )
+    except UnicodeDecodeError as err:
+        log.warning("Could not extract URLs: %s", err)
+        return set()
+
     urls = []
-    for url in extractor.gen_urls(text):
+    for url in extracted_urls:
         url = url.rstrip(".\"]'>;,)")
-        # if not re.search(r"://", url):
-        #     url = "http://" + url
         if re.match(r"[\d\.:a-f]+", url, flags=re.IGNORECASE):
             # skip literal IP addresses
             continue
