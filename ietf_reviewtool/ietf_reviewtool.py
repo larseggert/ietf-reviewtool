@@ -49,6 +49,7 @@ from .util.text import (
     extract_ips,
     extract_urls,
     strip_pagination,
+    unfold,
 )
 from .util.utils import read, write
 
@@ -519,6 +520,39 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
         )
 
 
+def check_expert_review(doc: Doc, review: IetfReview) -> None:
+    """
+    Check whether the document mentions "Expert Review", and add a note to check whether
+    this IANA policy seems reasonable.
+
+    @param      doc     The document text
+    @param      review  IETF Review object
+
+    @return     None
+    """
+    if re.search(r"\bExpert\s+Review\b", unfold(doc.orig), flags=re.IGNORECASE):
+        review.comment(
+            "Note to self",
+            "Check whether Expert Review is an appropriate registration policy here.",
+        )
+
+
+def check_implementation_status(doc: Doc, review: IetfReview) -> None:
+    """
+    Check whether the "Implementation Status" section is reasonable.
+
+    @param      doc     The document text
+    @param      review  IETF Review object
+
+    @return     None
+    """
+    if re.search(r"\bImplementation\s+Status\b", unfold(doc.orig), flags=re.IGNORECASE):
+        review.comment(
+            "Note to self",
+            'Check whether the "Implementation Status" section is reasonable.',
+        )
+
+
 def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     Check any XML in the document for issues
@@ -739,6 +773,8 @@ def review_items(
             check_meta(doc, review, state.datatracker, log)
 
         check_xml(doc, review)
+        check_expert_review(doc, review)
+        check_implementation_status(doc, review)
 
         verbose = state.verbose > 0
 
