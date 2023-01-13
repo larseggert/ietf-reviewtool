@@ -376,14 +376,14 @@ files = [
 
 [[package]]
 name = "urlextract"
-version = "1.7.1"
+version = "1.8.0"
 description = "Collects and extracts URLs from given text."
 category = "main"
 optional = false
 python-versions = "*"
 files = [
-    {file = "urlextract-1.7.1-py3-none-any.whl", hash = "sha256:6c7d43b55eaef609622a4564f30a1b0e109c02900e639f3aaf4108e367bb28e8"},
-    {file = "urlextract-1.7.1.tar.gz", hash = "sha256:0d883b59de5387873ea3825e62b343583313135ac664c3f5c0d55f17b2b3bf7d"},
+    {file = "urlextract-1.8.0-py3-none-any.whl", hash = "sha256:98b38aca4a555116e8b46e5a134b9e4e54e351b8e37169d2857730d1d0ce42c7"},
+    {file = "urlextract-1.8.0.tar.gz", hash = "sha256:3573f6b812814efe06ca46e91e82d984edaa3cd07daaaaa296a467ad9881a037"},
 ]
 
 [package.dependencies]
