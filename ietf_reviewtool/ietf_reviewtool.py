@@ -826,6 +826,10 @@ def review_items(
         doc = Doc(item, log, state.datatracker)
         review = IetfReview(doc, gen_mkd, role.strip(), gh_id.strip(), state.width)
 
+        # do this first, since it might adjust doc.status
+        if chk_meta and doc.meta:
+            check_meta(doc, review, state.datatracker, log)
+
         if chk_misc:
             check_html_entities(doc, review)
 
@@ -834,9 +838,6 @@ def review_items(
 
         if chk_tlp:
             check_tlp(doc, review)
-
-        if chk_meta and doc.meta:
-            check_meta(doc, review, state.datatracker, log)
 
         check_xml(doc, review)
         check_json(doc, review)

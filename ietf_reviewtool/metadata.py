@@ -9,6 +9,7 @@ from .doc import Doc
 from .review import IetfReview
 from .util.fetch import fetch_meta
 from .util.text import word_join
+from .references import STATUS_RANK
 
 
 def check_meta(
@@ -41,6 +42,10 @@ def check_meta(
                 f'Intended RFC status in datatracker is "{level}", but '
                 f'document says "{doc.status}".',
             )
+            # continue checking with the "higher" of the two statuses
+            if STATUS_RANK[level.lower()] > STATUS_RANK[doc.status.lower()]:
+                doc.status = level
+                log.info(f"Conflicting status info; checking as {doc.status}")
 
     num_authors = len(doc.meta["authors"])
     if num_authors > 5:

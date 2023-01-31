@@ -11,6 +11,19 @@ from .util.text import untag, word_join, basename
 from .util.utils import duplicates, get_latest, die
 
 
+STATUS_RANK = {
+    "internet standard": 3,
+    "full standard": 3,
+    "best current practice": 3,
+    "draft standard": 2,
+    "proposed standard": 1,
+    "standards track": 1,
+    "experimental": 0,
+    "informational": 0,
+    "unknown": 0,
+}
+
+
 def check_refs(
     doc: Doc,
     review: IetfReview,
@@ -230,22 +243,9 @@ def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bo
     ref_level = ref_level.lower()
 
     if kind == "normative":
-        rank = {
-            "internet standard": 3,
-            "full standard": 3,
-            "best current practice": 3,
-            "draft standard": 2,
-            "proposed standard": 1,
-            "standards track": 1,
-            "experimental": 0,
-            "informational": 0,
-            "unknown": 0,
-        }
-
         if level == "best current practice":
-            return rank[level] < rank["proposed standard"]
-
-        return rank[level] > rank[ref_level]
+            return STATUS_RANK[level] < STATUS_RANK["proposed standard"]
+        return STATUS_RANK[level] > STATUS_RANK[ref_level]
 
     if kind == "informative":
         return False
