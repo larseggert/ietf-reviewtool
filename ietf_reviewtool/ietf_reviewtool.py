@@ -553,6 +553,72 @@ def check_implementation_status(doc: Doc, review: IetfReview) -> None:
         )
 
 
+def check_code(doc: Doc, review: IetfReview) -> None:
+    """
+    Check any code in "CODE BEGINS/CODE ENDS" blocks.
+
+    @param      doc     The document text
+    @param      review  IETF Review object
+
+    @return     None
+    """
+    # this assumes the JSON is properly indented
+    snippets = re.finditer(r"<CODE BEGINS>(.*)<CODE ENDS>", doc.orig, flags=re.DOTALL)
+
+    for snip in snippets:
+        text = snip.group(1)
+        # try and figure out what the code is in
+        file = re.search(r"\s*file\s*['\"](.*)['\"]\s*$", text, flags=re.MULTILINE)
+        lang = None
+        if file:
+            text = "".join(text.splitlines(keepends=True)[1:])
+            lang = os.path.splitext(file.group(1))[1][1:].lower().strip()
+        # TODO: validate
+
+
+def check_json(doc: Doc, review: IetfReview) -> None:
+    """
+    Check any JSON in the document for issues.
+
+    @param      doc     The document text
+    @param      review  IETF Review object
+
+    @return     None
+    """
+    # this assumes the JSON is properly indented
+    snippets = re.finditer(r"^(\s*){\s*$", doc.orig, flags=re.MULTILINE)
+    for snip in snippets:
+        # try and find closing braces with identical indentation
+        closing = re.search(
+            rf"^{snip.group(1)[1:]}}}\s*$",
+            doc.orig[snip.start() :],
+            flags=re.MULTILINE,
+        )
+        if closing is None:
+            continue
+        text = doc.orig[snip.start() + 1 : snip.start() + 1 + closing.end() - 1]
+        # fix it up a bit
+        text = text.replace("base64url({", "{").replace("})", "}")
+        try:
+            json.loads(text)
+        except json.decoder.JSONDecodeError as err:
+            nit = ""
+            quote = "> "
+            if review.mkd:
+                nit += "```\n"
+                quote = ""
+
+            for i, line in enumerate(text.splitlines(keepends=True)):
+                nit += f"{quote}{line}"
+                if i == err.lineno - 1:
+                    nit += f"{quote}{' ' * (err.colno - 1)}^ {err.msg}\n"
+
+            if review.mkd:
+                nit += "```\n"
+
+            review.nit("JSON", nit, wrap=False)
+
+
 def check_xml(doc: Doc, review: IetfReview) -> None:
     """
     Check any XML in the document for issues
@@ -773,6 +839,8 @@ def review_items(
             check_meta(doc, review, state.datatracker, log)
 
         check_xml(doc, review)
+        check_json(doc, review)
+        check_code(doc, review)
         check_expert_review(doc, review)
         check_implementation_status(doc, review)
 

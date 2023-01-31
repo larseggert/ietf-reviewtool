@@ -55,6 +55,7 @@ def check_grammar(
             "MORFOLOGIK_RULE_EN_US",
             "MULTIPLICATION_SIGN",
             "NUMBERS_IN_WORDS",
+            "OUTSIDE_OF",
             "PLUS_MINUS",
             "PUNCTUATION_PARAGRAPH_END",
             "RETURN_IN_THE",
@@ -64,6 +65,7 @@ def check_grammar(
             "UNIT_SPACE",
             "UNLIKELY_OPENING_PUNCTUATION",
             "UPPERCASE_SENTENCE_START",
+            "WHETHER",
             "WHITESPACE_RULE",
             "WORD_CONTAINS_UNDERSCORE",
         ]
