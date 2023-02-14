@@ -332,7 +332,7 @@ def thank_art_reviewer(
 
         if art_review["id"] in thanked:
             log.warning(
-                "Already thanked %s for %s review", reviewer["name"], group["name"]
+                "Already recorded %s for %s review", reviewer["name"], group["name"]
             )
             continue
 
@@ -522,15 +522,19 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
 def check_expert_review(doc: Doc, review: IetfReview) -> None:
     """
-    Check whether the document mentions "Expert Review", and add a note to check whether
-    this IANA policy seems reasonable.
+    Check whether the document mentions "Expert Review" or "Specification Required" and
+    add a note to check whether this IANA policy seems reasonable.
 
     @param      doc     The document text
     @param      review  IETF Review object
 
     @return     None
     """
-    if re.search(r"\bExpert\s+Review\b", unfold(doc.orig), flags=re.IGNORECASE):
+    if re.search(
+        r"(\bExpert\s+Review\b|Specification\s+Required)",
+        unfold(doc.orig),
+        flags=re.IGNORECASE,
+    ):
         review.comment(
             "Note to self",
             "Check whether Expert Review is an appropriate registration policy here.",
