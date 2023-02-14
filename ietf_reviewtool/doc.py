@@ -62,7 +62,7 @@ class Doc:
             self.orig,
             re.MULTILINE,
         )
-        self.status = status.group(1).strip() if status else ""
+        self.status = status.group(1).strip() if status else "unknown"
 
         # extract relationships
         self.relationships = {}

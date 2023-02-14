@@ -63,7 +63,13 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
         used_keywords_str = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
 
-        if doc.status.lower() in ["informational", "experimental"]:
+        if doc.status.lower() == "unknown":
+            review.comment(
+                "Boilerplate",
+                "Document boilerplate does not seem to indicate the intended "
+                "RFC status.",
+            )
+        elif doc.status.lower() in ["informational", "experimental"]:
             review.comment(
                 "Boilerplate",
                 f"Document has {doc.status} status, but uses the RFC2119 "
