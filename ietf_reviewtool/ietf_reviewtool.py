@@ -25,6 +25,7 @@ import difflib
 import html
 import ipaddress
 import json
+import json5
 import logging
 import os
 import re
@@ -50,6 +51,7 @@ from .util.text import (
     extract_urls,
     strip_pagination,
     unfold,
+    undo_rfc8792,
 )
 from .util.utils import read, write
 
@@ -589,20 +591,26 @@ def check_json(doc: Doc, review: IetfReview) -> None:
 
     @return     None
     """
-    # this assumes the JSON is properly indented
     snippets = re.finditer(r"^(\s*){\s*$", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
-        # try and find closing braces with identical indentation
-        closing = re.search(
-            rf"^{snip.group(1)[1:]}}}\s*$",
-            doc.orig[snip.start() :],
-            flags=re.MULTILINE,
-        )
-        if closing is None:
-            continue
-        text = doc.orig[snip.start() + 1 : snip.start() + 1 + closing.end() - 1]
+        # parse JSON snippet until closing brace
+        tokens = json5.tokenizer.tokenize(doc.orig[snip.start() :])
+        stack = []
+        collected = []
+        for token in tokens:
+            collected.append(token.value)
+            if token.type in ["WHITESPACE"]:
+                continue
+            if token.type in ["LBRACE", "LBRACKET"]:
+                stack.append(token)
+            elif token.type in ["RBRACE", "RBRACKET"]:
+                stack.pop()
+            if not stack:
+                break
+
+        text = "".join(collected)
         # fix it up a bit
-        text = text.replace("base64url({", "{").replace("})", "}")
+        text = undo_rfc8792(text.replace("base64url({", "{").replace("})", "}"))
         try:
             json.loads(text)
         except json.decoder.JSONDecodeError as err:
@@ -646,10 +654,7 @@ def check_xml(doc: Doc, review: IetfReview) -> None:
             log.warning('cannot find XML end tag "%s"', start.group(1))
             continue
 
-        text = doc.orig[snip.start() : snip.start() + end.end()]
-        # undo RFC 8792 single backslash strategy line-wrapping
-        # TODO: add support for double backslash strategy
-        text = re.sub(r"\\$\n^\s*", "", text, flags=re.MULTILINE)
+        text = undo_rfc8792(doc.orig[snip.start() : snip.start() + end.end()])
 
         if snip.group(1):
             prefix = snip.group(1)

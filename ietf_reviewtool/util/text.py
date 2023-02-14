@@ -295,3 +295,15 @@ def wrap_para(text: str, end: str, width: int) -> str:
         textwrap.fill(text, width=width, break_on_hyphens=False, break_long_words=False)
         + end
     )
+
+
+def undo_rfc8792(text: str) -> str:
+    """
+    Undo RFC 8792 single backslash strategy line-wrapping.
+
+    @param      text  The text to unwrap
+
+    @return     The unwrapped text.
+    """
+    # TODO: add support for double backslash strategy
+    return re.sub(r"\\$\n^\s*", "", text, flags=re.MULTILINE)
