@@ -126,7 +126,7 @@ class Doc:
         for part, content in parts.items():
             refs[part] = re.findall(
                 r"(\[(?:\d+|[a-z]+(?:[-_.]?\w+)*)\]"
-                + (r"|RFC\d+|draft-[-a-z\d_.]+" if part == "text" else r"")
+                + (r"|\bRFC\d+\b|\bdraft-[-a-z\d_.]+\b" if part == "text" else r"")
                 + r")",
                 unfold(content),
                 flags=re.IGNORECASE,
@@ -138,22 +138,26 @@ class Doc:
             self.references[part] = []
             for ref in refs[part]:
                 ref_match = re.search(
-                    r"\s*" + re.escape(ref) + r"\s+((?:[^\n][\n]?)+)\n",
+                    r"\s*" + re.escape(ref) + r"([^\[]*)",
                     parts[part],
                     re.DOTALL,
                 )
                 if ref_match:
                     ref_text = unfold(ref_match.group(0))
-                    found = False
+                    # remove the quoted title, to avoid matching in there
+                    ref_text = re.sub(r'"[^"]*"', "", ref_text)
+                    targets = set()
 
-                    for pat in [r"(draft-[-a-z\d_.]+)", r"((?:RFC|rfc)\d+)"]:
-                        match = re.search(pat, ref_text)
+                    for match in re.finditer(
+                        r"(draft-[-a-z\d_.]+|(?:RFC|rfc)\s*\d+)", ref_text, re.DOTALL
+                    ):
                         if match:
-                            found = True
-                            self.references[part].append((ref, match.group(0).lower()))
-                            break
+                            target = re.sub(r"\s+", "", match.group(0).lower())
+                            targets.add(target)
 
-                    if not found:
+                    if targets:
+                        self.references[part].append((ref, targets))
+                    else:
                         urls = extract_urls(ref_text, log, True, True)
                         self.references[part].append(
                             (ref, urls.pop() if urls else None)

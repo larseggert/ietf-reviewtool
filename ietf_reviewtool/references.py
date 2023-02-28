@@ -1,5 +1,6 @@
 """ietf-reviewtool references module"""
 
+import itertools
 import logging
 import os
 import re
@@ -67,6 +68,7 @@ def check_refs(
             continue
 
         tags, tgts = zip(*doc.references[kind])
+        tgts = list(itertools.chain(*tgts))
         dupes = duplicates(tags)
         if dupes:
             review.nit(
@@ -102,7 +104,11 @@ def check_refs(
     if in_text - both:
         ref_list = word_join(list(in_text - both), prefix=quote, suffix=quote)
         review.comment(
-            "Missing references", f"No reference entries found for: {ref_list}."
+            "Missing references",
+            (
+                "No reference entries found for these items, "
+                f"which were mentioned in the text: {ref_list}."
+            ),
         )
 
     if both - in_text:
@@ -119,7 +125,7 @@ def check_refs(
                 review.comment(
                     "Uncited references",
                     f"Document {rel} {quote}RFC{rel_doc}{quote}, "
-                    "but does not cite it as a reference.",
+                    "but does not cite it as a reference, which is a bit odd.",
                 )
 
     level = doc.meta and (doc.meta["std_level"] or doc.meta["intended_std_level"])
@@ -128,103 +134,110 @@ def check_refs(
         level = doc.status if doc.status else "unknown"
 
     for kind in ["normative", "informative"]:
-        for tag, ref_doc in doc.references[kind]:
-            if ref_doc:
-                name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
-            if not ref_doc or not name:
-                log.debug(
-                    "No metadata available for %s reference %s",
-                    kind,
-                    tag,
-                )
-                if kind == "normative" and doc.status.lower() not in [
+        for tag, ref_docs in doc.references[kind]:
+            for ref_doc in ref_docs:
+                if ref_doc:
+                    name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
+                if not ref_doc or not name:
+                    log.debug(
+                        "No metadata available for %s reference %s",
+                        kind,
+                        tag,
+                    )
+                    if kind == "normative" and doc.status.lower() not in [
+                        "informational",
+                        "experimental",
+                    ]:
+                        review.comment(
+                            "DOWNREFs",
+                            f"Possible DOWNREF from this {doc.status} doc "
+                            f"to {quote}{tag}{quote}. If so, the IESG needs to approve it.",
+                        )
+                    continue
+
+                draft_components = re.search(r"^(draft-.*)-(\d{2,})$", name.group(0))
+                rev = None
+                if draft_components:
+                    docname = draft_components.group(1)
+                    rev = basename(draft_components.group(2))
+                else:
+                    docname = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
+                ref_meta = fetch_meta(datatracker, docname, log)
+                display_name = re.sub(r"rfc", r"RFC", docname)
+
+                latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
+                if latest and latest["rev"] and rev and latest["rev"] > rev:
+                    if latest["rev"].startswith("rfc"):
+                        review.nit(
+                            "Outdated references",
+                            f"Document references {quote}{display_name}{quote}, but that "
+                            f"has been published as {quote}{latest['rev'].upper()}{quote}.",
+                        )
+                    else:
+                        review.nit(
+                            "Outdated references",
+                            f"Document references {quote}{docname}-{rev}{quote}, but "
+                            f"{quote}-{latest['rev']}{quote} is the latest "
+                            f"available revision.",
+                        )
+
+                if ref_meta and doc.status.lower() not in [
                     "informational",
                     "experimental",
                 ]:
-                    review.comment(
-                        "DOWNREFs",
-                        f"Possible DOWNREF from this {doc.status} doc "
-                        f"to {quote}{tag}{quote}. If so, the IESG needs to approve it.",
+                    ref_level = (
+                        ref_meta["std_level"]
+                        or ref_meta["intended_std_level"]
+                        or "unknown"
                     )
-                continue
-
-            draft_components = re.search(r"^(draft-.*)-(\d{2,})$", name.group(0))
-            rev = None
-            if draft_components:
-                docname = draft_components.group(1)
-                rev = basename(draft_components.group(2))
-            else:
-                docname = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
-            ref_meta = fetch_meta(datatracker, docname, log)
-            display_name = re.sub(r"rfc", r"RFC", docname)
-
-            latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
-            if latest and latest["rev"] and rev and latest["rev"] > rev:
-                if latest["rev"].startswith("rfc"):
-                    review.nit(
-                        "Outdated references",
-                        f"Document references {quote}{display_name}{quote}, but that "
-                        f"has been published as {quote}{latest['rev'].upper()}{quote}.",
-                    )
-                else:
-                    review.nit(
-                        "Outdated references",
-                        f"Document references {quote}{docname}-{rev}{quote}, but "
-                        f"{quote}-{latest['rev']}{quote} is the latest "
-                        f"available revision.",
-                    )
-
-            if ref_meta and doc.status.lower() not in ["informational", "experimental"]:
-                ref_level = (
-                    ref_meta["std_level"] or ref_meta["intended_std_level"] or "unknown"
-                )
-                if (
-                    is_downref(level, kind, ref_level, log)
-                    and docname not in downrefs_in_registry
-                    and docname not in docs_in_lc
-                ):
-                    if ref_level is None:
-                        review.comment(
-                            "DOWNREFs",
-                            f"Possible DOWNREF {quote}{tag}{quote} from this {level} "
-                            f"to {quote}{display_name}{quote}.",
-                        )
-                    else:
-                        msg = f"DOWNREF {quote}{tag}{quote} from this {level} to "
-                        if ref_level != "unknown":
-                            msg += f"{ref_level} {quote}{display_name}{quote}."
-                        else:
-                            msg += (
-                                f"{quote}{display_name}{quote}"
-                                + " of unknown standards level."
+                    if (
+                        is_downref(level, kind, ref_level, log)
+                        and docname not in downrefs_in_registry
+                        and docname not in docs_in_lc
+                    ):
+                        if ref_level is None:
+                            review.comment(
+                                "DOWNREFs",
+                                f"Possible DOWNREF {quote}{tag}{quote} from this {level} "
+                                f"to {quote}{display_name}{quote}.",
                             )
-                        msg += (
-                            " (For IESG discussion. "
-                            "It seems this DOWNREF was not mentioned in "
-                            "the Last Call and also seems to not appear "
-                            "in the DOWNREF registry.)"
-                        )
-                        review.comment("DOWNREFs", msg)
+                        else:
+                            msg = f"DOWNREF {quote}{tag}{quote} from this {level} to "
+                            if ref_level != "unknown":
+                                msg += f"{ref_level} {quote}{display_name}{quote}."
+                            else:
+                                msg += (
+                                    f"{quote}{display_name}{quote}"
+                                    + " of unknown standards level."
+                                )
+                            msg += (
+                                " (For IESG discussion. "
+                                "It seems this DOWNREF was not mentioned in "
+                                "the Last Call and also seems to not appear "
+                                "in the DOWNREF registry.)"
+                            )
+                            review.comment("DOWNREFs", msg)
 
-            obsoleted_by = fetch_dt(
-                datatracker,
-                "doc/relateddocument/?relationship__slug=obs&target__name=" + docname,
-                log,
-            )
-            if obsoleted_by:
-                ob_bys = []
-                for obs in obsoleted_by:
-                    obs_by = fetch_dt(datatracker, obs["source"], log)
-                    if "rfc" in obs_by:
-                        ob_bys.append(obs_by["rfc"])
-
-                ob_rfcs = word_join(ob_bys, prefix=f"{quote}RFC", suffix=quote)
-                review.nit(
-                    "Outdated references",
-                    f"Reference {quote}{tag}{quote} to {quote}{display_name}{quote}, "
-                    f"which was obsoleted by {ob_rfcs} "
-                    "(this may be on purpose).",
+                obsoleted_by = fetch_dt(
+                    datatracker,
+                    "doc/relateddocument/?relationship__slug=obs&target__name="
+                    + docname,
+                    log,
                 )
+                if obsoleted_by:
+                    ob_bys = []
+                    for obs in obsoleted_by:
+                        obs_by = fetch_dt(datatracker, obs["source"], log)
+                        if "rfc" in obs_by:
+                            ob_bys.append(obs_by["rfc"])
+
+                    ob_rfcs = word_join(ob_bys, prefix=f"{quote}RFC", suffix=quote)
+                    review.nit(
+                        "Outdated references",
+                        f"Reference {quote}{tag}{quote} to {quote}{display_name}{quote}, "
+                        f"which was obsoleted by {ob_rfcs} "
+                        "(this may be on purpose).",
+                    )
 
 
 def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bool:
