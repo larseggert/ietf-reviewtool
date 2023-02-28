@@ -50,10 +50,14 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
 
     @return     { description_of_the_return_value }
     """
-    uses_keywords = set(re.findall(KEYWORDS_PATTERN, doc.orig))
     has_8174_boilerplate = set(re.findall(BOILERPLATE_8174_PATTERN, doc.orig))
     has_2119_boilerplate = set(re.findall(BOILERPLATE_2119_PATTERN, doc.orig))
     has_boilerplate_begin = set(re.findall(BOILERPLATE_BEGIN_PATTERN, doc.orig))
+
+    doc_minus_boilerplate = re.sub(BOILERPLATE_8174_PATTERN, "", doc.orig)
+    doc_minus_boilerplate = re.sub(BOILERPLATE_2119_PATTERN, "", doc_minus_boilerplate)
+    doc_minus_boilerplate = re.sub(BOILERPLATE_2119_PATTERN, "", doc_minus_boilerplate)
+    uses_keywords = set(re.findall(KEYWORDS_PATTERN, doc_minus_boilerplate))
 
     msg = None
     if uses_keywords:
