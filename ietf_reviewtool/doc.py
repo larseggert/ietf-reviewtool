@@ -159,7 +159,5 @@ class Doc:
                         self.references[part].append((ref, targets))
                     else:
                         urls = extract_urls(ref_text, log, True, True)
-                        self.references[part].append(
-                            (ref, urls.pop() if urls else None)
-                        )
+                        self.references[part].append((ref, urls))
         self.references["text"] = refs["text"]

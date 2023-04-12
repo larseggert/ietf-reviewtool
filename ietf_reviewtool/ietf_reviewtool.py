@@ -622,7 +622,7 @@ def check_json(doc: Doc, review: IetfReview) -> None:
 
             for i, line in enumerate(text.splitlines(keepends=True)):
                 nit += f"{quote}{line}"
-                if i == err.lineno - 1:
+                if i == err.lineno - 2:
                     nit += f"{quote}{' ' * (err.colno - 1)}^ {err.msg}\n"
 
             if review.mkd:
