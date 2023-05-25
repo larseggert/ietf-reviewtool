@@ -9,15 +9,17 @@ import os
 import re
 import urllib.request
 
-import appdirs  # type: ignore
+import appdirs
 import requests
 import requests_cache
+
+from typing import Optional
 
 from .text import basename, strip_pagination
 from .utils import get_latest, read, write
 
 
-def fetch_init_cache(log: logging.Logger) -> None:
+def fetch_init_cache(log: Optional[logging.Logger] = None) -> None:
     """
     Initialize the fetch cache.
 
@@ -26,7 +28,8 @@ def fetch_init_cache(log: logging.Logger) -> None:
     cache = appdirs.user_cache_dir("ietf-reviewtool")
     if not os.path.isdir(cache):
         os.mkdir(cache)
-    log.debug("Using cache directory %s", cache)
+    if log:
+        log.debug("Using cache directory %s", cache)
     requests_cache.install_cache(
         cache_name=os.path.join(cache, "ietf-reviewtool"),
         backend="sqlite",

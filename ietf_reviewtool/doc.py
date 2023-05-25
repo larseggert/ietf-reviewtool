@@ -149,7 +149,9 @@ class Doc:
                     targets = set()
 
                     for match in re.finditer(
-                        r"(draft-[-a-z\d_.]+|(?:RFC|rfc)\s*\d+)", ref_text, re.DOTALL
+                        r"\b(draft-[-a-z\d_.]+|(?:RFC|rfc)\s*\d+)\b",
+                        ref_text,
+                        re.DOTALL,
                     ):
                         if match:
                             target = re.sub(r"\s+", "", match.group(0).lower())

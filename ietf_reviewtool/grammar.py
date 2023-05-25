@@ -2,12 +2,14 @@
 
 import math
 import re
+import requests_cache
 
 import language_tool_python  # type: ignore
 
 from .review import IetfReview
 from .util.docposition import DocPosition
 from .util.text import unfold, wrap_para
+from .util.fetch import fetch_init_cache
 
 
 def check_grammar(
@@ -27,9 +29,14 @@ def check_grammar(
 
     @return     { description_of_the_return_value }
     """
+    # the languagetool auto-download seems to fail if the cache is enabled
+    requests_cache.uninstall_cache()
+    lt = language_tool_python.LanguageTool("en-US")
+    fetch_init_cache()
+
     issues = [
         i
-        for i in language_tool_python.LanguageTool("en-US").check(unfold("".join(text)))
+        for i in lt.check(unfold("".join(text)))
         if i.ruleId
         not in [
             "ADVERTISEMENT_OF_FOR",

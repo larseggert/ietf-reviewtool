@@ -92,7 +92,7 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
                 msg += " (It contains some text with a similar beginning.)"
     else:
         if has_8174_boilerplate or has_2119_boilerplate or has_boilerplate_begin:
-            msg = "This document does not use RFC2119 keywords, but contains"
+            msg = "This document does not use RFC2119 keywords, but contains "
             if has_8174_boilerplate:
                 msg += "the RFC8174 boilerplate."
             elif has_2119_boilerplate:

@@ -594,7 +594,11 @@ def check_json(doc: Doc, review: IetfReview) -> None:
     snippets = re.finditer(r"^(\s*){\s*$", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
         # parse JSON snippet until closing brace
-        tokens = json5.tokenizer.tokenize(doc.orig[snip.start() :])
+        try:
+            tokens = list(json5.tokenizer.tokenize(doc.orig[snip.start() :]))
+        except json5.utils.JSON5DecodeError as err:
+            review.nit("JSON", str(err) + "\n", wrap=False)
+            return
         stack = []
         collected = []
         for token in tokens:
