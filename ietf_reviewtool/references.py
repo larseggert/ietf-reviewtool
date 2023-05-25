@@ -118,8 +118,18 @@ def check_refs(
     for rel, rel_docs in doc.relationships.items():
         for rel_doc in rel_docs:
             ref = f"rfc{rel_doc}"
-            in_normative = ref in [x[1] for x in doc.references["normative"]]
-            in_informative = ref in [x[1] for x in doc.references["informative"]]
+
+            def ref_in(ref, refs) -> bool:
+                return (
+                    filter(
+                        lambda x: re.search(ref, x),
+                        [x[1] for x in refs],
+                    )
+                    is not None
+                )
+
+            in_normative = ref_in(ref, doc.references["normative"])
+            in_informative = ref_in(ref, doc.references["informative"])
 
             if not in_normative and not in_informative:
                 review.comment(
