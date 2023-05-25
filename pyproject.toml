@@ -29,6 +29,12 @@ mypy = ">=0.942"
 irt = "ietf_reviewtool.ietf_reviewtool:cli"
 ietf-reviewtool = "ietf_reviewtool.ietf_reviewtool:cli"
 
+[tool.poetry.group.types.dependencies]
+types-requests = "^2.31.0.0"
+types-appdirs = "^1.4.3.5"
+types-urllib3 = "^1.26.25.13"
+types-click = "^7.1.8"
+types-pyyaml = "^6.0.12.10"
 [tool.pylint.messages_control]
 # TODO: these are very high and should be gradually reduced during refactoring
 max-args = 15
