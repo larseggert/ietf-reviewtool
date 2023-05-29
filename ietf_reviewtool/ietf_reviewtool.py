@@ -52,6 +52,7 @@ from .util.text import (
     strip_pagination,
     unfold,
     undo_rfc8792,
+    doc_parts,
 )
 from .util.utils import read, write
 
@@ -150,7 +151,7 @@ def extract_urls_from_items(
     @param      examples  Include "example" URLs (e.g., to example.com, etc.)
     @param      common    Include "common" URLs (e.g., to rfc-editor.org)
     """
-    urls = set()
+    urls: dict[str, set] = {}
     for item in items:
         if not os.path.isfile(item):
             log.warning("%s does not exist, skipping", item)
@@ -160,10 +161,15 @@ def extract_urls_from_items(
         text = strip_pagination(read(item, log))
 
         if text:
-            urls |= extract_urls(read(item, log), log, examples, common)
+            item_urls = extract_urls(read(item, log), log, examples, common)
+            for part, part_urls in item_urls.items():
+                if part not in urls:
+                    urls[part] = set()
+                urls[part] |= item_urls[part]
 
-    for url in urls:
-        print(url)
+    for part, part_urls in urls.items():
+        for url in part_urls:
+            print(url, part)
 
 
 @click.command("fetch", help="Download items (I-Ds, charters, RFCs, etc.)")
@@ -472,7 +478,9 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     @return     None
     """
     result = []
-    urls = extract_urls(doc.orig, log)
+    urls = set()
+    for part, part_urls in extract_urls(doc.orig, log).items():
+        urls |= part_urls
 
     for url in urls:
         if re.search(r"tools\.ietf\.org", url, flags=re.IGNORECASE):

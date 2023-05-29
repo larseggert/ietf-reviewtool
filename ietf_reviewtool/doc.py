@@ -7,7 +7,7 @@ import tempfile
 
 from .util.docposition import SECTION_PATTERN
 from .util.fetch import get_items, fetch_meta
-from .util.text import basename, revision, unfold, untag, extract_urls
+from .util.text import basename, revision, unfold, untag, extract_urls, doc_parts
 from .util.utils import read
 
 
@@ -100,28 +100,7 @@ class Doc:
         self.meta = fetch_meta(datatracker, self.name, log)
         self.is_id = self.name.startswith("draft-")
 
-        parts = {"text": "", "informative": "", "normative": ""}
-        part = "text"
-        for line in self.orig_lines:
-            pot_sec = SECTION_PATTERN.search(line)
-            if pot_sec:
-                which = pot_sec.group(0)
-                if re.search(
-                    r"^(?:(\d\.?)+\s+)?(?:Non-Norm|Inform)(?:ative|ational)\s+References?\s*$",
-                    which,
-                    flags=re.IGNORECASE,
-                ):
-                    part = "informative"
-                elif re.search(
-                    r"^(?:(\d\.?)+\s+)?(Normative\s+)?References?\s*$",
-                    which,
-                    flags=re.IGNORECASE,
-                ):
-                    part = "normative"
-                else:
-                    part = "text"
-            parts[part] += line
-
+        parts = doc_parts(self.orig)
         refs = {}
         for part, content in parts.items():
             refs[part] = re.findall(

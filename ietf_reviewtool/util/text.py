@@ -8,6 +8,8 @@ import os
 import textwrap
 import urlextract  # type: ignore
 
+from .docposition import SECTION_PATTERN
+
 extractor = urlextract.URLExtract()
 extractor.update_when_older(7)  # update TLDs when older than 7 days
 
@@ -111,7 +113,7 @@ def extract_urls(
     log: logging.Logger,
     examples: bool = False,
     common: bool = False,
-) -> set:
+) -> dict[str, set[str]]:
     """
     Return a list of URLs in a text string.
 
@@ -123,60 +125,65 @@ def extract_urls(
     @return     List of URLs.
     """
 
-    # find all URLs
-    text = unfold(text)
-    try:
-        extracted_urls = extractor.find_urls(
-            text=text, with_schema_only=True, only_unique=True
-        )
-    except UnicodeDecodeError as err:
-        log.warning("Could not extract URLs: %s", err)
-        return set()
+    urls: dict[str, set] = {}
+    for part, part_text in doc_parts(text).items():
+        if part not in urls:
+            urls[part] = set()
 
-    urls = []
-    for url in extracted_urls:
-        url = url.rstrip(".\"]'>;,)")
-        if re.match(r"[\d\.:a-f]+", url, flags=re.IGNORECASE):
-            # skip literal IP addresses
-            continue
+        # find all URLs in part
+        part_text = unfold(part_text)
         try:
-            urllib.parse.urlparse(url).netloc
-        except ValueError as err:
-            log.warning("%s: %s", err, url)
-            continue
-        urls.append(url)
-
-    if not examples:
-        # remove example URLs
-        urls = [
-            u
-            for u in urls
-            if not re.search(
-                r"example\.(com|net|org)|\.example",
-                urllib.parse.urlparse(u).netloc
-                if urllib.parse.urlparse(u).netloc
-                else u,
-                re.IGNORECASE,
+            extracted_urls = extractor.find_urls(
+                text=part_text, with_schema_only=True, only_unique=True
             )
-        ]
+        except UnicodeDecodeError as err:
+            log.warning("Could not extract URLs: %s", err)
+            return {}
 
-    if not common:
-        # remove some common URLs
-        urls = [
-            u
-            for u in urls
-            if not re.search(
-                r"""https?://
-                    datatracker\.ietf\.org/drafts/current/|
-                    trustee\.ietf\.org/license-info|
-                    (www\.)?rfc-editor\.org/info/rfc\d+|
-                    (www\.)?ietf\.org/archive/id/draft-""",
-                u,
-                flags=re.VERBOSE | re.IGNORECASE,
-            )
-        ]
+        for url in extracted_urls:
+            url = url.rstrip(".\"]'>;,)")
+            if re.match(r"[\d\.:a-f]+", url, flags=re.IGNORECASE):
+                # skip literal IP addresses
+                continue
+            try:
+                urllib.parse.urlparse(url).netloc
+            except ValueError as err:
+                log.warning("%s: %s", err, url)
+                continue
 
-    return set(urls)
+            urls[part].add(url)
+
+        if not examples:
+            # remove example URLs
+            urls[part] = {
+                u
+                for u in urls[part]
+                if not re.search(
+                    r"example\.(com|net|org)|\.example",
+                    urllib.parse.urlparse(u).netloc
+                    if urllib.parse.urlparse(u).netloc
+                    else u,
+                    re.IGNORECASE,
+                )
+            }
+
+        if not common:
+            # remove some common URLs
+            urls[part] = {
+                u
+                for u in urls[part]
+                if not re.search(
+                    r"""https?://
+                        datatracker\.ietf\.org/drafts/current/|
+                        trustee\.ietf\.org/license-info|
+                        (www\.)?rfc-editor\.org/info/rfc\d+|
+                        (www\.)?ietf\.org/archive/id/draft-""",
+                    u,
+                    flags=re.VERBOSE | re.IGNORECASE,
+                )
+            }
+
+    return urls
 
 
 def strip_pagination(text: str) -> str:
@@ -307,3 +314,35 @@ def undo_rfc8792(text: str) -> str:
     """
     # TODO: add support for double backslash strategy
     return re.sub(r"\\$\n^\s*", "", text, flags=re.MULTILINE)
+
+
+def doc_parts(text: str) -> dict[str, str]:
+    """
+    Split document lines into body text and reference sections.
+
+    @param      text  The text to spit
+
+    @return     A dict containing the lines in different parts of the document.
+    """
+    parts = {"text": "", "informative": "", "normative": ""}
+    part = "text"
+    for line in text.splitlines(keepends=True):
+        pot_sec = SECTION_PATTERN.search(line)
+        if pot_sec:
+            which = pot_sec.group(0)
+            if re.search(
+                r"^(?:(\d\.?)+\s+)?(?:Non-Norm|Inform)(?:ative|ational)\s+References?\s*$",
+                which,
+                flags=re.IGNORECASE,
+            ):
+                part = "informative"
+            elif re.search(
+                r"^(?:(\d\.?)+\s+)?(Normative\s+)?References?\s*$",
+                which,
+                flags=re.IGNORECASE,
+            ):
+                part = "normative"
+            else:
+                part = "text"
+        parts[part] += line
+    return parts
