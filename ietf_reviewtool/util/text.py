@@ -142,9 +142,6 @@ def extract_urls(
 
         for url in extracted_urls:
             url = url.rstrip(".\"]'>;,)")
-            if re.match(r"[\d\.:a-f]+", url, flags=re.IGNORECASE):
-                # skip literal IP addresses
-                continue
             try:
                 urllib.parse.urlparse(url).netloc
             except ValueError as err:
