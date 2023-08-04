@@ -605,7 +605,8 @@ def check_json(doc: Doc, review: IetfReview) -> None:
         try:
             tokens = list(json5.tokenizer.tokenize(doc.orig[snip.start() :]))
         except json5.utils.JSON5DecodeError as err:
-            review.nit("JSON", str(err) + "\n", wrap=False)
+            line = doc.orig[: snip.start()].count("\n") + 1
+            review.nit("JSON", f"line {line}: {str(err)}\n", wrap=False)
             return
         stack = []
         collected = []
