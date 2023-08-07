@@ -216,18 +216,18 @@ files = [
 
 [[package]]
 name = "json-five"
-version = "0.8.0"
+version = "1.1.1"
 description = "A JSON5 parser that, among other features, supports round-trip preservation of comments"
 optional = false
-python-versions = "*"
+python-versions = ">=3.8.0"
 files = [
-    {file = "json-five-0.8.0.tar.gz", hash = "sha256:046806d247281c71be5a0a35413322a4b68b77d946140313edb92eaea9a5afc3"},
-    {file = "json_five-0.8.0-py3-none-any.whl", hash = "sha256:9eaa1176c0a9e1790a0aed96d93edf5e15315970792d64341005a46dd7eabdc8"},
+    {file = "json-five-1.1.1.tar.gz", hash = "sha256:4a6299873fa44db92b4aa013332476a6fdb36fafb81204db4b1d064e104897a8"},
+    {file = "json_five-1.1.1-py3-none-any.whl", hash = "sha256:20a45f299262eb61f6438a51d5000c4dbf018ae1a8ae225173c38d04add2513c"},
 ]
 
 [package.dependencies]
 regex = "*"
-sly = "*"
+sly = ">=0.5"
 
 [[package]]
 name = "language-tool-python"
