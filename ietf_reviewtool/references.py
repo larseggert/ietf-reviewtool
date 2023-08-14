@@ -67,8 +67,8 @@ def check_refs(
         if not doc.references[kind]:
             continue
 
-        tags, tgts = zip(*doc.references[kind])
-        tgts = list(itertools.chain(*tgts))
+        tags = [x[0] for x in doc.references[kind]]
+        tgts = [next(iter(x[1])) if x[1] else None for x in doc.references[kind]]
         dupes = duplicates(tags)
         if dupes:
             review.nit(

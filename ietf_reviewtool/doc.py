@@ -134,11 +134,12 @@ class Doc:
                     ):
                         if match:
                             target = re.sub(r"\s+", "", match.group(0).lower())
+                            target = os.path.splitext(target)[0]
                             targets.add(target)
 
-                    if targets:
-                        self.references[part].append((ref, targets))
-                    else:
+                    if not targets:
                         urls = extract_urls(ref_text, log, True, True)
-                        self.references[part].append((ref, urls))
+                        targets = set().union(*[urls[key] for key in urls])
+
+                    self.references[part].append((ref, targets))
         self.references["text"] = refs["text"]

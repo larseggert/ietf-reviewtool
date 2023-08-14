@@ -1,10 +1,17 @@
 """ietf-reviewtool utils module"""
 
 import datetime
+import ipaddress
 import logging
 import sys
 
 import charset_normalizer
+
+TEST_NET_1 = ipaddress.IPv4Network("192.0.2.0/24")
+TEST_NET_2 = ipaddress.IPv4Network("198.51.100.0/24")
+TEST_NET_3 = ipaddress.IPv4Network("203.0.113.0/24")
+MCAST_TEST_NET = ipaddress.IPv4Network("233.252.0.0/24")
+TEST_NET_V6 = ipaddress.IPv6Network("2001:db8::/32")
 
 
 def die(msg: str, log: logging.Logger, err: int = 1) -> None:

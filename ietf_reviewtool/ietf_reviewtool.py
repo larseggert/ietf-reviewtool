@@ -54,17 +54,18 @@ from .util.text import (
     undo_rfc8792,
     doc_parts,
 )
-from .util.utils import read, write
+from .util.utils import (
+    read,
+    write,
+    TEST_NET_1,
+    TEST_NET_2,
+    TEST_NET_3,
+    MCAST_TEST_NET,
+    TEST_NET_V6,
+)
 
 
 log = logging.getLogger(__name__)
-
-
-TEST_NET_1 = ipaddress.IPv4Network("192.0.2.0/24")
-TEST_NET_2 = ipaddress.IPv4Network("198.51.100.0/24")
-TEST_NET_3 = ipaddress.IPv4Network("203.0.113.0/24")
-MCAST_TEST_NET = ipaddress.IPv4Network("233.252.0.0/24")
-TEST_NET_V6 = ipaddress.IPv6Network("2001:db8::/32")
 
 
 class State:
@@ -324,6 +325,10 @@ def thank_art_reviewer(
 
         if assignment["state"].endswith("withdrawn/"):
             log.debug("Review for %s was withdrawn", doc.name)
+            continue
+
+        if not assignment["review"]:
+            log.warning("Could not fetch review for %s", doc.name)
             continue
 
         art_review = fetch_dt(datatracker, assignment["review"], log)
@@ -633,8 +638,8 @@ def check_json(doc: Doc, review: IetfReview) -> None:
                 nit += "```\n"
                 quote = ""
 
-            for i, line in enumerate(text.splitlines(keepends=True)):
-                nit += f"{quote}{line}"
+            for i, l in enumerate(text.splitlines(keepends=True)):
+                nit += f"{quote}{l}"
                 if i == err.lineno - 2:
                     nit += f"{quote}{' ' * (err.colno - 1)}^ {err.msg}\n"
 

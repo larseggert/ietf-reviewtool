@@ -1,5 +1,6 @@
 """ietf-reviewtool text module"""
 
+import ipaddress
 import logging
 import re
 import urllib.parse
@@ -9,9 +10,23 @@ import textwrap
 import urlextract  # type: ignore
 
 from .docposition import SECTION_PATTERN
+from .utils import TEST_NET_1, TEST_NET_2, TEST_NET_3, MCAST_TEST_NET, TEST_NET_V6
 
-extractor = urlextract.URLExtract()
+extractor = urlextract.URLExtract(extract_localhost=False, limit=9999999)
 extractor.update_when_older(7)  # update TLDs when older than 7 days
+extractor.add_enclosure("<", ">")
+extractor.set_stop_chars_right(
+    extractor.get_stop_chars_right()
+    | {
+        '"',
+        "]",
+        ">",
+        ";",
+        ",",
+        "'",
+        ")",
+    }
+)
 
 
 def normalize_ws(string: str) -> str:
@@ -134,51 +149,63 @@ def extract_urls(
         part_text = unfold(part_text)
         try:
             extracted_urls = extractor.find_urls(
-                text=part_text, with_schema_only=True, only_unique=True
+                text=part_text, with_schema_only=False, only_unique=True
             )
         except UnicodeDecodeError as err:
             log.warning("Could not extract URLs: %s", err)
             return {}
-
         for url in extracted_urls:
             url = url.rstrip(".\"]'>;,)")
+            # urllib doesn't seem to support schemes that don't end in //, work around:
+            fixed_url = re.sub(r"^(\w+:)([^/]{2}.*)", r"\1//\2", url, re.IGNORECASE)
             try:
-                urllib.parse.urlparse(url).netloc
+                netloc = urllib.parse.urlparse(fixed_url).netloc
+                if not netloc:
+                    netloc = url
             except ValueError as err:
                 log.warning("%s: %s", err, url)
                 continue
 
-            urls[part].add(url)
-
-        if not examples:
-            # remove example URLs
-            urls[part] = {
-                u
-                for u in urls[part]
-                if not re.search(
-                    r"example\.(com|net|org)|\.example",
-                    urllib.parse.urlparse(u).netloc
-                    if urllib.parse.urlparse(u).netloc
-                    else u,
+            if not examples:
+                # remove example URLs
+                if re.search(
+                    r"example\.(com|net|org)$|\.(test|example|invalid|localhost)$",
+                    netloc,
                     re.IGNORECASE,
-                )
-            }
+                ):
+                    continue
 
-        if not common:
+                # remove URLs w/example IP addresses
+                try:
+                    addr = ipaddress.ip_address(netloc)
+                    if (
+                        isinstance(addr, ipaddress.IPv4Address)
+                        and (
+                            addr in TEST_NET_1
+                            or addr in TEST_NET_2
+                            or addr in TEST_NET_3
+                            or addr in MCAST_TEST_NET
+                        )
+                    ) or (
+                        isinstance(addr, ipaddress.IPv6Address) and addr in TEST_NET_V6
+                    ):
+                        continue
+                except ValueError:
+                    pass
+
             # remove some common URLs
-            urls[part] = {
-                u
-                for u in urls[part]
-                if not re.search(
-                    r"""https?://
-                        datatracker\.ietf\.org/drafts/current/|
-                        trustee\.ietf\.org/license-info|
-                        (www\.)?rfc-editor\.org/info/rfc\d+|
-                        (www\.)?ietf\.org/archive/id/draft-""",
-                    u,
-                    flags=re.VERBOSE | re.IGNORECASE,
-                )
-            }
+            if not common and re.search(
+                r"""https?://
+                            datatracker\.ietf\.org/drafts/current/|
+                            trustee\.ietf\.org/license-info|
+                            (www\.)?rfc-editor\.org/(info|rfc)/rfc\d+|
+                            (www\.)?ietf\.org/archive/id/draft-""",
+                url,
+                flags=re.VERBOSE | re.IGNORECASE,
+            ):
+                continue
+
+            urls[part].add(url)
 
     return urls
 
