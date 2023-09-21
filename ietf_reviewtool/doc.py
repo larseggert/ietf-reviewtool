@@ -41,11 +41,15 @@ class Doc:
                 os.chdir(current_directory)
             self.current = read(item, log)
             if not self.orig:
-                log.error(
-                    "No original for %s, cannot review, only performing checks",
-                    item,
-                )
-                self.orig = self.current
+                # check if there is a ".orig" file to diff against
+                orig_item += ".orig"
+                self.orig = read(orig_item, log)
+                if not self.orig:
+                    log.error(
+                        "No original for %s, cannot review, only performing checks",
+                        item,
+                    )
+                    self.orig = self.current
 
         self.orig_lines = self.orig.splitlines(keepends=True)
         self.current_lines = self.current.splitlines(keepends=True)

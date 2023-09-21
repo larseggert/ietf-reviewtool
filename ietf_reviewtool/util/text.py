@@ -22,7 +22,7 @@ extractor.set_stop_chars_right(
         "]",
         ">",
         ";",
-        ",",
+        # ",",
         "'",
         ")",
     }
