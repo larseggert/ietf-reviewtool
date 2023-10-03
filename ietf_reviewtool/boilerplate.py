@@ -17,15 +17,10 @@ def check_tlp(doc: Doc, review: IetfReview) -> None:
     @return     { description_of_the_return_value }
     """
     text = unfold(doc.orig)
-    if re.search(
-        r"""This\s+document\s+may\s+not\s+be\s+modified,?\s+and\s+derivative\s+
-            works\s+of\s+it\s+may\s+not\s+be\s+created""",
-        text,
-        re.VERBOSE,
-    ):
+    if re.search(TLP_6CI_PATTERN, text):
         msg = (
             "Document has an IETF Trust Provisions (TLP) Section 6.c(i) "
-            "Publication Limitation clause. This means it can in most cases"
+            "Publication Limitation clause. This means it can in most cases "
             "not be a WG document."
         )
         if doc.status.lower() == "standards track":
@@ -191,7 +186,7 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
             "Is this really needed?",
         )
 
-    if sotm:
+    if sotm and not re.match(TLP_6CI_PATTERN, sotm.strip()):
         review.nit(
             "Boilerplate",
             f'Found stray text in boilerplate: "{sotm.strip()}"',
@@ -244,6 +239,12 @@ BOILERPLATE_BEGIN_PATTERN = re.compile(
 TLP_6A_PATTERN = re.compile(
     r"""\s*This\s+Internet-Draft\s+is\s+submitted\s+in\s+full\s+conformance\s+
         with\s+the\s+provisions\s+of\s+BCP\s*78\s+and\s+BCP\s*79\.\s+""",
+    re.VERBOSE,
+)
+
+TLP_6CI_PATTERN = re.compile(
+    r"""This\s+document\s+may\s+not\s+be\s+modified,?\s+and\s+derivative\s+
+            works\s+of\s+it\s+may\s+not\s+be\s+created""",
     re.VERBOSE,
 )
 
