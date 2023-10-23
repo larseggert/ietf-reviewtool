@@ -329,13 +329,13 @@ files = [
 
 [[package]]
 name = "num2words"
-version = "0.5.12"
+version = "0.5.13"
 description = "Modules to convert numbers to words. Easily extensible."
 optional = false
 python-versions = "*"
 files = [
-    {file = "num2words-0.5.12-py3-none-any.whl", hash = "sha256:9eeef488658226ab36818c06d7aeb956d19b530fb62030596b6802fb4659f30e"},
-    {file = "num2words-0.5.12.tar.gz", hash = "sha256:7e7c0b0f080405aa3a1dd9d32b1ca90b3bf03bab17b8e54db05e1b78301a0988"},
+    {file = "num2words-0.5.13-py3-none-any.whl", hash = "sha256:39e662c663f0a7e15415431ea68eb3dc711b49e3b776d93403e1da0a219ca4ee"},
+    {file = "num2words-0.5.13.tar.gz", hash = "sha256:a3064716fbbf90d75c449450cebfbc73a6a13e63b2531d09bdecc3ab1a2209cf"},
 ]
 
 [package.dependencies]
