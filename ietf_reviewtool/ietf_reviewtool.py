@@ -355,7 +355,7 @@ def thank_art_reviewer(
 
             review.preface(
                 "",
-                f'Thanks to {reviewer["name_from_draft"] or reviewer["name"]} '
+                f'Thanks to {reviewer["name"] or reviewer["name_from_draft"]} '
                 + f'for the {group["name"]} review ({art_review["external_url"]}).',
             )
 
