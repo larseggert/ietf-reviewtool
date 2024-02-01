@@ -299,13 +299,9 @@ def get_items(
             if not target:
                 log.warning("cannot find target for %s", doc)
                 continue
-            docalias = fetch_dt(datatracker, target[0]["target"], log)
-            if not docalias:
-                log.warning("cannot find docalias for %s", target[0]["target"])
-                continue
-            alias = fetch_dt(datatracker, docalias["document"], log)
+            alias = fetch_dt(datatracker, target[0]["target"], log)
             if not alias:
-                log.warning("cannot find doc for %s", docalias["document"])
+                log.warning("cannot find alias for %s", target[0]["target"])
                 continue
             items.append(f"{alias['name']}-{alias['rev']}.txt")
             do_strip = False

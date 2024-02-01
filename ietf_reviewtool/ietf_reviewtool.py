@@ -343,7 +343,7 @@ def thank_art_reviewer(
             log.warning("Could not fetch ART for %s", doc.name)
             continue
 
-        if art_review["id"] in thanked:
+        if reviewer["id"] in thanked:
             log.warning(
                 "Already recorded %s for %s review", reviewer["name"], group["name"]
             )
@@ -351,7 +351,7 @@ def thank_art_reviewer(
 
         if group["acronym"].lower() == thank_art.lower():
             # remember we thanked for this
-            thanked.add(art_review["id"])
+            thanked.add(reviewer["id"])
 
             review.preface(
                 "",

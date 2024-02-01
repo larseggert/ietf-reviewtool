@@ -21,6 +21,7 @@ num2words = ">=0.5.10"
 json-five = ">=0.8.0"
 urllib3 = ">=1.26.15"
 requests = ">=2.28.2"
+setuptools = "^69.0.2"
 
 [tool.poetry.dev-dependencies]
 mypy = ">=0.942"
@@ -35,6 +36,7 @@ types-appdirs = "^1.4.3.5"
 types-urllib3 = "^1.26.25.13"
 types-click = "^7.1.8"
 types-pyyaml = "^6.0.12.10"
+
 [tool.pylint.messages_control]
 # TODO: these are very high and should be gradually reduced during refactoring
 max-args = 15
