@@ -258,13 +258,13 @@ sly = ">=0.5"
 
 [[package]]
 name = "language-tool-python"
-version = "2.7.1"
+version = "2.7.3"
 description = "Checks grammar using LanguageTool."
 optional = false
 python-versions = "*"
 files = [
-    {file = "language_tool_python-2.7.1-py3-none-any.whl", hash = "sha256:ea9e93c261fbc1ec8bd52353c1b22fadba597cd4d65153d7c8f86fe499c719e7"},
-    {file = "language_tool_python-2.7.1.tar.gz", hash = "sha256:753bb6d9a5a8c810bfa96b9029531cfc147fa84822b035e882ff4b3e7c686dae"},
+    {file = "language_tool_python-2.7.3-py3-none-any.whl", hash = "sha256:e473350d17b1ec2640902a829048311aeee77914120609a461b35f17c32db78f"},
+    {file = "language_tool_python-2.7.3.tar.gz", hash = "sha256:9cb942889960de322d7d79b21187585513565a6b2e0d691dddda2b175128d394"},
 ]
 
 [package.dependencies]
