@@ -146,4 +146,6 @@ class Doc:
                         targets = set().union(*[urls[key] for key in urls])
 
                     self.references[part].append((ref, targets))
-        self.references["text"] = refs["text"]
+        self.references["text"] = set(
+            x.upper() if x.startswith("[rfc") else x for x in refs["text"]
+        )
