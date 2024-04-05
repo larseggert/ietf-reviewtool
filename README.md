@@ -158,47 +158,9 @@ Section 2, paragraph 7, nit:
 +                                    +   ^
 ```
 
-### Using caches
-
-In order to speed up the process, and to operate while being offline, you can
-set various environment variables to point the tool at directories in which you
-[cache various IETF document via
-`rsync`](https://www.ietf.org/standards/ids/internet-draft-mirror-sites/).
-
-These environment variables are named:
-
-* `IETF_CHARTERS`
-* `IETF_CONFLICT_REVIEWS`
-* `IETF_IDS`
-* `IETF_RFCS`
-* `IETF_STATUS_CHANGES`
-
-When the tool finds a given item to review in the cache, it will refrain from
-downloading it from the web.
-
-Note that the tool will **not** place items into the cache directories when they are not present; you **will** need to update the cache via `rsync`.
-
 ## Acknowledgments
 
 The ideas for some of these tools came from some of Henrik Levkowetz's earlier
 `bash` scripts. In the case of the `strip` tool, most of the original regular
 expressions were taken from his
 [`rfcstrip`](https://tools.ietf.org/tools/rfcstrip/about) `awk` script.
-
-
-## License
-
-Copyright (C) 2021-2022  Lars Eggert
-
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; either version 2 of the License, or (at your option) any later
-version.
-
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
-Street, Fifth Floor, Boston, MA  02110-1301, USA.
