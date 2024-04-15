@@ -23,7 +23,7 @@ jobs:
           path: "${{github.workspace}}/linter_output.zip"
       - run: unzip ${{steps.download.outputs.download-path}}
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
       # pinned to lintly 0.5.0 due to https://github.com/grantmcconnaughey/Lintly/issues/41
       - name: Install dependencies
         run: |
