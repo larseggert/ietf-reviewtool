@@ -227,13 +227,13 @@ files = [
 
 [[package]]
 name = "json-five"
-version = "1.1.1"
+version = "1.1.2"
 description = "A JSON5 parser that, among other features, supports round-trip preservation of comments"
 optional = false
 python-versions = ">=3.8.0"
 files = [
-    {file = "json-five-1.1.1.tar.gz", hash = "sha256:4a6299873fa44db92b4aa013332476a6fdb36fafb81204db4b1d064e104897a8"},
-    {file = "json_five-1.1.1-py3-none-any.whl", hash = "sha256:20a45f299262eb61f6438a51d5000c4dbf018ae1a8ae225173c38d04add2513c"},
+    {file = "json_five-1.1.2-py3-none-any.whl", hash = "sha256:b10608e6af9730b9e1c1a099e71f86acb905991f830957a6b25f53bd4826fe8f"},
+    {file = "json_five-1.1.2.tar.gz", hash = "sha256:1c5b1bae6039bc44632d009b32338d4b59ab765c596d96577b52cc3dadc936e2"},
 ]
 
 [package.dependencies]
