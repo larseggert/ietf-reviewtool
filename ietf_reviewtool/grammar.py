@@ -39,6 +39,7 @@ def check_grammar(
         for i in lt.check(unfold("".join(text)))
         if i.ruleId
         not in [
+        "HYPHEN_TO_EN",
             "ADVERTISEMENT_OF_FOR",
             "ALL_OF_THE",
             "ARROWS",

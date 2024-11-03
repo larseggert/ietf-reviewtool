@@ -249,36 +249,24 @@ def get_items(
         if not file_name.endswith(".txt") and not file_name.endswith(".xml"):
             file_name += ".txt"
 
-        if get_writeup:
-            get_writeups(datatracker, item, log)
-
-        if get_xml and item.startswith("draft-") and file_name.endswith(".txt"):
-            # also try and get XML source
-            items.append(re.sub(r"\.txt$", ".xml", file_name))
-
         if os.path.isfile(file_name):
             log.warning("%s exists, skipping", file_name)
             result.append(file_name)
             continue
 
         log.debug("Getting %s", item)
-        cache = None
         text = ""
         url = ""
         match = re.search(r"^(conflict-review|status-change)-", item)
         if item.startswith("draft-"):
             url = "https://ietf.org/archive/id/" + file_name
-            cache = os.getenv("IETF_IDS")
         elif item.startswith("rfc"):
             url = "https://rfc-editor.org/rfc/" + file_name
-            cache = os.getenv("IETF_RFCS")
         elif item.startswith("charter-"):
             url_pattern = re.sub(
                 r"(.*)(((-\d+){2}).txt)$", r"\1/withmilestones\2", file_name
             )
             url = datatracker + "/doc/" + url_pattern
-            # the charters in rsync don't have milestones, can't use
-            # cache = os.getenv("IETF_CHARTERS")
             do_strip = False
         elif match:
             which = match[1]
@@ -288,7 +276,6 @@ def get_items(
                 # FIXME: figure out how to download status change text
                 continue
             text = get_writeups(datatracker, doc, log)
-            # in-progress conflict-reviews/status-changes are not in the cache
             doc = basename(doc)
             slug = "conflrev" if which == "conflict-review" else "statchg"
             target = fetch_dt(
@@ -308,16 +295,19 @@ def get_items(
         # else:
         #     die(f"Unknown item type: {item}", log)
 
-        if cache:
-            cache_file = os.path.join(cache, file_name)
-            if os.path.isfile(cache_file):
-                log.debug("Using cached %s", item)
-                text = read(cache_file, log)
-            else:
-                log.debug("No cached copy of %s in %s", item, cache)
-
         if not text and url:
             text = fetch_url(url, log)
+            if not text and not re.match(r"-\d{2}$", item):
+                log.debug("No text found, trying to fetch latest revision")
+                meta = fetch_dt(datatracker, f"doc/document/{item}", log)
+                if "rev" not in meta:
+                    log.warning("No datatracker info found for %s", item)
+                else:
+                    rev = meta["rev"]
+                    item = f"{item}-{rev}"
+                    file_name = f"{item}.txt"
+                    url = f"https://ietf.org/archive/id/{file_name}"
+                    text = fetch_url(url, log)
 
         if text:
             if file_name.endswith(".xml") and extract_md:
@@ -339,5 +329,12 @@ def get_items(
                 text = strip_pagination(text)
             write(text, file_name)
             result.append(file_name)
+
+        if get_writeup and not file_name.endswith(".xml"):
+            get_writeups(datatracker, item, log)
+
+        if get_xml and item.startswith("draft-") and file_name.endswith(".txt"):
+            # also try and get XML source
+            items.append(re.sub(r"\.txt$", ".xml", file_name))
 
     return result
