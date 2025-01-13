@@ -12,9 +12,10 @@ jobs:
     - run: pipx install poetry
     - uses: actions/setup-python@v5
       with:
+        python-version: ">=3.11"
         cache: poetry
     - run: |
-        pipx install flake8 pylint
+        pipx install black flake8 pylint
         poetry install
     - name: Prepare artifacts directory
       run: |
