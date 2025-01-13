@@ -6,7 +6,7 @@ name: Process linter results
 # access to secrets
 on:
   workflow_run:
-    workflows: ["Linter"]
+    workflows: ["Lint"]
     types:
       - completed
 

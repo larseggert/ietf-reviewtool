@@ -9,14 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - run: pipx install poetry
+    - run: pipx install poetry black flake8 pylint
     - uses: actions/setup-python@v5
       with:
         python-version: ">=3.11"
         cache: poetry
-    - run: |
-        pipx install black flake8 pylint
-        poetry install
+    - run: poetry install
     - name: Prepare artifacts directory
       run: |
         mkdir -p ./linter_output
