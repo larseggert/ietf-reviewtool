@@ -1,6 +1,5 @@
 """ietf-reviewtool references module"""
 
-import itertools
 import logging
 import os
 import re
@@ -146,8 +145,11 @@ def check_refs(
     for kind in ["normative", "informative"]:
         for tag, ref_docs in doc.references[kind]:
             for ref_doc in ref_docs:
-                if ref_doc:
-                    name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
+                name = (
+                    re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
+                    if ref_doc
+                    else ""
+                )
                 if not ref_doc or not name:
                     log.debug(
                         "No metadata available for %s reference %s",
@@ -161,7 +163,8 @@ def check_refs(
                         review.comment(
                             "DOWNREFs",
                             f"Possible DOWNREF from this {doc.status} doc "
-                            f"to {quote}{tag}{quote}. If so, the IESG needs to approve it.",
+                            f"to {quote}{tag}{quote}. If so, the IESG needs to "
+                            "approve it.",
                         )
                     continue
 
@@ -180,8 +183,9 @@ def check_refs(
                     if latest["rev"].startswith("rfc"):
                         review.nit(
                             "Outdated references",
-                            f"Document references {quote}{display_name}{quote}, but that "
-                            f"has been published as {quote}{latest['rev'].upper()}{quote}.",
+                            f"Document references {quote}{display_name}{quote}, but "
+                            f"that has been published as {quote}{latest['rev'].upper()}"
+                            "{quote}.",
                         )
                     else:
                         review.nit(
@@ -208,8 +212,8 @@ def check_refs(
                         if ref_level is None:
                             review.comment(
                                 "DOWNREFs",
-                                f"Possible DOWNREF {quote}{tag}{quote} from this {level} "
-                                f"to {quote}{display_name}{quote}.",
+                                f"Possible DOWNREF {quote}{tag}{quote} from this "
+                                f"{level} to {quote}{display_name}{quote}.",
                             )
                         else:
                             msg = f"DOWNREF {quote}{tag}{quote} from this {level} to "
@@ -244,7 +248,8 @@ def check_refs(
                     ob_rfcs = word_join(ob_bys, prefix=f"{quote}RFC", suffix=quote)
                     review.nit(
                         "Outdated references",
-                        f"Reference {quote}{tag}{quote} to {quote}{display_name}{quote}, "
+                        f"Reference {quote}{tag}{quote} to "
+                        f"{quote}{display_name}{quote}, "
                         f"which was obsoleted by {ob_rfcs} "
                         "(this may be on purpose).",
                     )

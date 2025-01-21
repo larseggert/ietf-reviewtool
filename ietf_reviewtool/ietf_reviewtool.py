@@ -21,17 +21,19 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
-import difflib
-import html
-import ipaddress
-import json
-import json5  # type: ignore
 import logging
 import os
 import re
 import xml.etree.ElementTree
 
 from typing import Union
+
+import difflib
+import html
+import ipaddress
+import json
+import json5  # type: ignore
+
 
 import click
 
@@ -52,7 +54,6 @@ from .util.text import (
     strip_pagination,
     unfold,
     undo_rfc8792,
-    doc_parts,
 )
 from .util.utils import (
     read,
@@ -80,7 +81,7 @@ class State:
         self.default = default
 
 
-CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], show_default=True)
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "show_default": True}
 
 
 @click.group(help="Review tool for IETF documents.", context_settings=CONTEXT_SETTINGS)
@@ -484,7 +485,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     """
     result = []
     urls = set()
-    for part, part_urls in extract_urls(doc.orig, log).items():
+    for _part, part_urls in extract_urls(doc.orig, log).items():
         urls |= part_urls
 
     for url in urls:
@@ -572,7 +573,7 @@ def check_implementation_status(doc: Doc, review: IetfReview) -> None:
         )
 
 
-def check_code(doc: Doc, review: IetfReview) -> None:
+def check_code(doc: Doc, _review: IetfReview) -> None:
     """
     Check any code in "CODE BEGINS/CODE ENDS" blocks.
 
@@ -588,10 +589,10 @@ def check_code(doc: Doc, review: IetfReview) -> None:
         text = snip.group(1)
         # try and figure out what the code is in
         file = re.search(r"\s*file\s*['\"](.*)['\"]\s*$", text, flags=re.MULTILINE)
-        lang = None
+        # lang = None
         if file:
             text = "".join(text.splitlines(keepends=True)[1:])
-            lang = os.path.splitext(file.group(1))[1][1:].lower().strip()
+            # lang = os.path.splitext(file.group(1))[1][1:].lower().strip()
         # TODO: validate
 
 

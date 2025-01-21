@@ -9,11 +9,12 @@ import os
 import re
 import urllib.request
 
+from typing import Optional
+
 import appdirs
 import requests
 import requests_cache
 
-from typing import Optional
 
 from .text import basename, strip_pagination
 from .utils import get_latest, read, write

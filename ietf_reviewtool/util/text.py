@@ -355,7 +355,8 @@ def doc_parts(text: str) -> dict[str, str]:
         if pot_sec:
             which = pot_sec.group(0)
             if re.search(
-                r"^(?:(\d\.?)+\s+)?(?:Non-Norm|Inform)(?:ative|ational)\s+References?\s*$",
+                r"^(?:(\d\.?)+\s+)?(?:Non-Norm|Inform)"
+                r"(?:ative|ational)\s+References?\s*$",
                 which,
                 flags=re.IGNORECASE,
             ):

@@ -143,8 +143,7 @@ class Doc:
 
                     if not targets:
                         urls = extract_urls(ref_text, log, True, True)
-                        targets = set().union(*[urls[key] for key in urls])
-
+                        targets = set().union(*[urls for _, urls in urls.items()])
                     self.references[part].append((ref, targets))
         self.references["text"] = set(
             x.upper() if x.startswith("[rfc") else x for x in refs["text"]

@@ -177,15 +177,18 @@ class IetfReview:
                 out.append(
                     inspect.cleandoc(
                         """
-                        This document has been reviewed as part of the transport area review
-                        team's ongoing effort to review key IETF documents. These comments were
-                        written primarily for the transport area directors, but are copied to the
-                        document's authors and WG to allow them to address any issues raised and
-                        also to the IETF discussion list for information.
+                        This document has been reviewed as part of the transport
+                        area review team's ongoing effort to review key IETF
+                        documents. These comments were written primarily for the
+                        transport area directors, but are copied to the
+                        document's authors and WG to allow them to address any
+                        issues raised and also to the IETF discussion list for
+                        information.
 
-                        When done at the time of IETF Last Call, the authors should consider this
-                        review as part of the last-call comments they receive. Please always CC
-                        tsv-art@ietf.org if you reply to or forward this review.
+                        When done at the time of IETF Last Call, the authors
+                        should consider this review as part of the last-call
+                        comments they receive. Please always CC tsv-art@ietf.org
+                        if you reply to or forward this review.
                         """
                     )
                     + "\n"
@@ -194,9 +197,11 @@ class IetfReview:
                 out.append(
                     inspect.cleandoc(
                         """
-                        I am the assigned Gen-ART reviewer for this draft. For background on
-                        Gen-ART, please see the [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
-                        Please resolve these comments along with any other comments you may receive.
+                        I am the assigned Gen-ART reviewer for this draft. For
+                        background on Gen-ART, please see the
+                        [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ). Please
+                        resolve these comments along with any other comments you
+                        may receive.
                         """
                     )
                     + "\n"
@@ -205,10 +210,11 @@ class IetfReview:
                 out.append(
                     inspect.cleandoc(
                         """
-                        I am the assigned Gen-ART reviewer for this draft. The General Area
-                        Review Team (Gen-ART) reviews all IETF documents being processed by
-                        the IESG for the IETF Chair. Please treat these comments just like
-                        any other last call comments. For more information, please see the
+                        I am the assigned Gen-ART reviewer for this draft. The
+                        General Area Review Team (Gen-ART) reviews all IETF
+                        documents being processed by the IESG for the IETF
+                        Chair. Please treat these comments just like any other
+                        last call comments. For more information, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
                         """
                     )
@@ -218,11 +224,12 @@ class IetfReview:
                 out.append(
                     inspect.cleandoc(
                         """
-                        I am the assigned Gen-ART reviewer for this draft. The General Area
-                        Review Team (Gen-ART) reviews all IETF documents being processed by
-                        the IESG for the IETF Chair. Please wait for direction from your
-                        document shepherd or AD before posting a new version of the draft.
-                        For more information, please see the
+                        I am the assigned Gen-ART reviewer for this draft. The
+                        General Area Review Team (Gen-ART) reviews all IETF
+                        documents being processed by the IESG for the IETF
+                        Chair. Please wait for direction from your document
+                        shepherd or AD before posting a new version of the
+                        draft. For more information, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
                         """
                     )
