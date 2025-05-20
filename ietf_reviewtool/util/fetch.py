@@ -109,7 +109,7 @@ def fetch_url(
                 method = "GET"
                 continue
             return ""
-        return response.text if method != "HEAD" else response
+        return response.text if method != "HEAD" else ""
 
 
 def fetch_dt(datatracker: str, query: str, log: logging.Logger) -> dict:
@@ -135,7 +135,7 @@ def fetch_dt(datatracker: str, query: str, log: logging.Logger) -> dict:
     return {}
 
 
-def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
+def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str | None:
     """
     Download related document writeups for an item from the datatracker.
 
@@ -164,6 +164,7 @@ def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str:
     }
     if events:
         log.debug(events)
+    text = None
     for evt in events:
         type_events = [e for e in doc_events if e["type"] == evt]
         text = get_latest(type_events, "time")["text"]
