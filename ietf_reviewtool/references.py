@@ -20,6 +20,7 @@ STATUS_RANK = {
     "standards track": 1,
     "experimental": 0,
     "informational": 0,
+    "historic": 0,
     "unknown": 0,
 }
 
@@ -281,7 +282,7 @@ def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bo
     return False  # can't be reached, but makes pylint quiet
 
 
-def fetch_downrefs(datatracker: str, log: logging.Logger) -> list:
+def fetch_downrefs(datatracker: str, log: logging.Logger) -> list[str]:
     """
     Fetches DOWNREFs from datatracker and returns them as a list.
 
