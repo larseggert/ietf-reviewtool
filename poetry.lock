@@ -260,14 +260,14 @@ sly = ">=0.5"
 
 [[package]]
 name = "language-tool-python"
-version = "2.9.3"
+version = "2.9.4"
 description = "Checks grammar using LanguageTool."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "language_tool_python-2.9.3-py3-none-any.whl", hash = "sha256:bdd49afe8dc2005314796b9b2c0998c32eb9b47a967771e19b9d61cf0e44b162"},
-    {file = "language_tool_python-2.9.3.tar.gz", hash = "sha256:205a564dda9df9629b96ca79ab94d8711e6e1aff70ae75dcfae06f9c270f2a66"},
+    {file = "language_tool_python-2.9.4-py3-none-any.whl", hash = "sha256:0496a0420f5f2e6404f5d7939e24f46ea6c0e3fce90313e6bd0507b5e918cba7"},
+    {file = "language_tool_python-2.9.4.tar.gz", hash = "sha256:a3a97014ffb5db1d8bedabd48feb26e8d3a5fe719152d7f873056fa0202d05c9"},
 ]
 
 [package.dependencies]
