@@ -27,7 +27,7 @@ jobs:
     - name: Lint with pylint
       run: pylint ietf_reviewtool tests --output-format=json | tee ./linter_output/pylint.out
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: linter_output
         path: linter_output
