@@ -281,24 +281,22 @@ sly = ">=0.5"
 
 [[package]]
 name = "language-tool-python"
-version = "2.9.5"
+version = "3.1.0"
 description = "Checks grammar using LanguageTool."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "language_tool_python-2.9.5-py3-none-any.whl", hash = "sha256:99a7bbe790fbd517b9c3d0ccb6b1a5f84630980295f5e23232b6eb6817d9696f"},
-    {file = "language_tool_python-2.9.5.tar.gz", hash = "sha256:fc8ef84b18597fef0f7c75916d0e632ee5f6e5d518e1205553b0dfd0115102e8"},
+    {file = "language_tool_python-3.1.0-py3-none-any.whl", hash = "sha256:0f4ad8801bc3bfc63da68c1c73c52f32e0b4750d1cc3b07d6f0c573d6c7b72e3"},
+    {file = "language_tool_python-3.1.0.tar.gz", hash = "sha256:0103ce85ab1b204c29df747ad89ae326d48fc8b2ae1a93c9c137edff205defe3"},
 ]
 
 [package.dependencies]
+packaging = "*"
 psutil = "*"
 requests = "*"
 toml = "*"
 tqdm = "*"
-
-[package.extras]
-dev = ["pytest", "pytest-cov", "pytest-runner", "pytest-xdist"]
 
 [[package]]
 name = "num2words"
@@ -314,6 +312,18 @@ files = [
 
 [package.dependencies]
 docopt = ">=0.6.2"
+
+[[package]]
+name = "packaging"
+version = "25.0"
+description = "Core utilities for Python packages"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"},
+    {file = "packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f"},
+]
 
 [[package]]
 name = "platformdirs"
