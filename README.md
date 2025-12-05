@@ -158,6 +158,44 @@ Section 2, paragraph 7, nit:
 +                                    +   ^
 ```
 
+## Configuration File
+
+You can persist settings in a configuration file instead of passing them on the
+command line every time. The tool looks for a configuration file at:
+
+- **macOS**: `~/Library/Application Support/ietf-reviewtool/config`
+- **Linux**: `~/.config/ietf-reviewtool/config` (or `$XDG_CONFIG_HOME/ietf-reviewtool/config`)
+- **Windows**: `C:\Users\<user>\AppData\Local\ietf-reviewtool\config`
+
+You can also specify a custom configuration file with `--config <path>`.
+
+The configuration file uses [configobj](https://configobj.readthedocs.io/) format.
+Use `[global]` for options that apply to all commands, and subcommand-specific
+sections like `[review]` for subcommand options. Option names match the CLI flags:
+
+```ini
+[global]
+verbose = 1
+width = 100
+datatracker = 'https://datatracker.ietf.org/'
+
+[review]
+github-id = '@yourusername'
+role = 'AD'
+check-grammar = False
+grammar-skip-rules = 'WHITESPACE_RULE,EN_QUOTES'
+
+[fetch]
+strip = True
+fetch-xml = False
+
+[fetch-agenda]
+make-directory = True
+save-agenda = True
+```
+
+Command-line arguments override configuration file values, which override defaults.
+
 ## Acknowledgments
 
 The ideas for some of these tools came from some of Henrik Levkowetz's earlier

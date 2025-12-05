@@ -36,6 +36,7 @@ import json5  # type: ignore
 
 
 import click
+from click_config_file import configuration_option, configobj_provider
 
 from .agenda import get_current_agenda, get_items_on_agenda
 from .boilerplate import check_tlp, check_boilerplate
@@ -67,6 +68,58 @@ from .util.utils import (
 
 
 log = logging.getLogger(__name__)
+
+
+# Map CLI option names to internal parameter names where they differ
+# (most options just need hyphen-to-underscore conversion)
+CONFIG_KEY_MAP = {
+    "github-id": "gh_id",
+    "check-ips": "chk_ips",
+    "check-urls": "chk_urls",
+    "check-refs": "chk_refs",
+    "check-grammar": "chk_grammar",
+    "check-meta": "chk_meta",
+    "check-inclusivity": "chk_inclusiv",
+    "check-boilerplate": "chk_boilerpl",
+    "check-misc": "chk_misc",
+    "check-tlp": "chk_tlp",
+    "output-markdown": "gen_mkd",
+    "default-enable": "default",
+    "include-example": "examples",
+    "include-common": "common",
+    "make-directory": "mkdir",
+}
+
+
+class CLIConfigProvider(configobj_provider):
+    """Config provider that allows CLI-style option names in config files.
+
+    Supports sections for subcommands. For a config file like:
+        [global]
+        verbose = 1
+
+        [review]
+        github-id = '@user'
+
+    Use section='global' for the main CLI group, and section='review' for
+    the review subcommand.
+    """
+
+    def __call__(self, file_path, cmd_name):
+        config = super().__call__(file_path, cmd_name)
+        # Translate CLI-style keys to internal parameter names
+        translated = {}
+        for key, value in config.items():
+            # Skip nested sections (they're for other commands)
+            if isinstance(value, dict):
+                continue
+            # First check explicit mapping, then try hyphen-to-underscore
+            if key in CONFIG_KEY_MAP:
+                translated_key = CONFIG_KEY_MAP[key]
+            else:
+                translated_key = key.replace("-", "_")
+            translated[translated_key] = value
+        return translated
 
 
 class State:
@@ -110,6 +163,12 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "show_default": True}
     default=79,
     help="Wrap the review to this character width.",
 )
+@configuration_option(
+    implicit=True,
+    cmd_name="ietf-reviewtool",
+    config_file_name="config",
+    provider=CLIConfigProvider(section="global"),
+)
 @click.pass_context
 def cli(
     ctx: click.Context, datatracker: str, verbose: int, default: bool, width: int
@@ -142,6 +201,12 @@ def cli(
     default=True,
     help="Include URLs that are common in IETF documents "
     "(e.g., from the boilerplate).",
+)
+@configuration_option(
+    implicit=True,
+    cmd_name="ietf-reviewtool",
+    config_file_name="config",
+    provider=CLIConfigProvider(section="extract-urls"),
 )
 def extract_urls_from_items(
     items: list, examples: bool = False, common: bool = True
@@ -200,6 +265,12 @@ def extract_urls_from_items(
     default=True,
     help="Extract Markdown source from XML source, if possible.",
 )
+@configuration_option(
+    implicit=True,
+    cmd_name="ietf-reviewtool",
+    config_file_name="config",
+    provider=CLIConfigProvider(section="fetch"),
+)
 @click.pass_obj
 def fetch(
     state: State,
@@ -238,6 +309,12 @@ def fetch(
     "in_place",
     default=False,
     help="Overwrite original item with stripped version.",
+)
+@configuration_option(
+    implicit=True,
+    cmd_name="ietf-reviewtool",
+    config_file_name="config",
+    provider=CLIConfigProvider(section="strip"),
 )
 def strip_items(items: list, in_place: bool = False) -> None:
     """
@@ -801,6 +878,12 @@ def validate_gh_id(_ctx, _param, value):
     callback=validate_gh_id,
     help='Your GitHub ID ("@username").',
 )
+@configuration_option(
+    implicit=True,
+    cmd_name="ietf-reviewtool",
+    config_file_name="config",
+    provider=CLIConfigProvider(section="review"),
+)
 @click.pass_obj
 def review_items(
     state: State,
@@ -958,6 +1041,12 @@ def review_items(
     "extract_markdown",
     default=True,
     help="Extract Markdown source from XML source, if possible.",
+)
+@configuration_option(
+    implicit=True,
+    cmd_name="ietf-reviewtool",
+    config_file_name="config",
+    provider=CLIConfigProvider(section="fetch-agenda"),
 )
 @click.pass_obj
 def fetch_agenda(

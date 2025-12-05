@@ -60,6 +60,7 @@ def strip_nits_from_diff(diff: list) -> list:
 
 class IetfReview:
     "Class to handle an IETF document review."
+
     boilerplate = {
         "nit": (
             "All comments below are about very minor potential issues "
