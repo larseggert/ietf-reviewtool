@@ -37,7 +37,7 @@ def check_grammar(
     issues = [
         i
         for i in lt.check(unfold("".join(text)))
-        if i.ruleId
+        if i.rule_id
         not in [
             "HYPHEN_TO_EN",
             "ADVERTISEMENT_OF_FOR",
@@ -85,9 +85,9 @@ def check_grammar(
             "WITH_THE_EXCEPTION_OF",
             "WORD_CONTAINS_UNDERSCORE",
         ]
-        and (not grammar_skip_rules or i.ruleId not in grammar_skip_rules.split(","))
+        and (not grammar_skip_rules or i.rule_id not in grammar_skip_rules.split(","))
     ]
-    issues = [i for i in issues if not i.ruleId.startswith("EN_REPEATEDWORDS_")]
+    issues = [i for i in issues if not i.rule_id.startswith("EN_REPEATEDWORDS_")]
 
     doc_pos = DocPosition()
     cur = 0
@@ -102,7 +102,7 @@ def check_grammar(
         if review.mkd:
             nit = f"#### {nit}"
         context = issue.context.lstrip(".")
-        offset = issue.offsetInContext - (len(issue.context) - len(context))
+        offset = issue.offset_in_context - (len(issue.context) - len(context))
         context = context.rstrip(".")
 
         compressed = re.sub(r"\s+", r" ", context[0:offset])
@@ -119,7 +119,7 @@ def check_grammar(
             nit += "```\n"
             quote = ""
         nit += f"{quote}{context}\n"
-        nit += f"{quote}{' ' * offset}{'^' * issue.errorLength}\n"
+        nit += f"{quote}{' ' * offset}{'^' * issue.error_length}\n"
         if review.mkd:
             nit += "```\n"
 
@@ -136,6 +136,6 @@ def check_grammar(
             message += "."
 
         if show_rule_id:
-            message = f"{message} [{issue.ruleId}]"
+            message = f"{message} [{issue.rule_id}]"
 
         review.nit("Grammar/style", nit + wrap_para(message, "\n", width), wrap=False)
