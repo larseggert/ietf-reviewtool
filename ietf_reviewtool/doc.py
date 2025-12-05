@@ -13,6 +13,7 @@ from .util.utils import read
 
 class Doc:
     "Class to handle a document to review."
+
     name: str
     status: str
     orig: str
