@@ -43,7 +43,7 @@ def fetch_init_cache(log: Optional[logging.Logger] = None) -> None:
 
 def fetch_url(
     url: str, log: logging.Logger, use_cache: bool = True, method: str = "GET"
-) -> str:
+) -> str | None:
     """
     Fetches the resource at the given URL or checks its reachability (when
     method is "HEAD".) A failing HEAD request is retried as a GET, since some
@@ -69,7 +69,7 @@ def fetch_url(
                 return response.read()
         except urllib.error.URLError as err:
             log.debug("%s -> %s", url, err)
-            return ""
+            return None
 
     while True:
         try:
@@ -100,6 +100,16 @@ def fetch_url(
                 timeout=20,
                 headers=headers,
             )
+            # For HEAD requests, treat a 403 after a redirect as valid.
+            # This handles bot-protected destinations (e.g., Cloudflare) that
+            # block automated clients after a valid redirect (e.g., from doi.org).
+            if method == "HEAD" and response.status_code == 403 and response.history:
+                log.debug(
+                    "%s -> redirect to %s -> 403 (treating as valid)",
+                    url,
+                    response.url,
+                )
+                return ""
             response.raise_for_status()
         except requests.exceptions.RequestException as err:
             log.debug("%s -> %s", url, err)
@@ -108,7 +118,7 @@ def fetch_url(
                 headers["Range"] = "bytes=0-100"
                 method = "GET"
                 continue
-            return ""
+            return None
         return response.text if method != "HEAD" else ""
 
 
@@ -277,7 +287,7 @@ def get_items(
             else:
                 # FIXME: figure out how to download status change text
                 continue
-            text = get_writeups(datatracker, doc, log)
+            text = get_writeups(datatracker, doc, log) or ""
             doc = basename(doc)
             slug = "conflrev" if which == "conflict-review" else "statchg"
             target = fetch_dt(
@@ -298,7 +308,7 @@ def get_items(
         #     die(f"Unknown item type: {item}", log)
 
         if not text and url:
-            text = fetch_url(url, log)
+            text = fetch_url(url, log) or ""
             if not text and not re.match(r"-\d{2}$", item):
                 log.debug("No text found, trying to fetch latest revision")
                 meta = fetch_dt(datatracker, f"doc/document/{item}", log)
@@ -309,7 +319,7 @@ def get_items(
                     item = f"{item}-{rev}"
                     file_name = f"{item}.txt"
                     url = f"https://ietf.org/archive/id/{file_name}"
-                    text = fetch_url(url, log)
+                    text = fetch_url(url, log) or ""
 
         if text:
             if file_name.endswith(".xml") and extract_md:

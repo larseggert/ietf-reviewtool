@@ -123,6 +123,25 @@ def extract_ips(text: str) -> set:
     return ips
 
 
+def extract_section_numbers(text: str) -> set[str]:
+    """
+    Extract all section numbers from a document.
+
+    @param      text  The document text
+
+    @return     Set of section numbers found (e.g., {"1", "1.1", "17.2.2.1"}).
+    """
+    section_numbers = set()
+    for line in text.splitlines():
+        match = SECTION_PATTERN.search(line)
+        if match:
+            # Extract the numeric part (e.g., "17.2.2.1" from "17.2.2.1.  Title")
+            num_match = re.match(r"^[\d.]+", match.group(0).strip())
+            if num_match:
+                section_numbers.add(num_match.group(0).rstrip("."))
+    return section_numbers
+
+
 def extract_urls(
     text: str,
     log: logging.Logger,
@@ -140,6 +159,7 @@ def extract_urls(
     @return     List of URLs.
     """
 
+    section_numbers = extract_section_numbers(text)
     urls: dict[str, set] = {}
     for part, part_text in doc_parts(text).items():
         if part not in urls:
@@ -156,6 +176,11 @@ def extract_urls(
             return {}
         for url in extracted_urls:
             url = url.rstrip(".\"]'>;,)")
+
+            # Skip section numbers that urlextract mistakes for URLs.
+            if url in section_numbers:
+                continue
+
             # urllib doesn't seem to support schemes that don't end in //, work around:
             fixed_url = re.sub(r"^(\w+:)([^/]{2}.*)", r"\1//\2", url, re.IGNORECASE)
             try:
