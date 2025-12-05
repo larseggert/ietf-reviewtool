@@ -149,9 +149,9 @@ def check_refs(
                 name = (
                     re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
                     if ref_doc
-                    else ""
+                    else None
                 )
-                if not ref_doc or not name:
+                if not name:
                     log.debug(
                         "No metadata available for %s reference %s",
                         kind,

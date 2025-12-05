@@ -277,7 +277,7 @@ def get_items(
             else:
                 # FIXME: figure out how to download status change text
                 continue
-            text = get_writeups(datatracker, doc, log)
+            text = get_writeups(datatracker, doc, log) or ""
             doc = basename(doc)
             slug = "conflrev" if which == "conflict-review" else "statchg"
             target = fetch_dt(
