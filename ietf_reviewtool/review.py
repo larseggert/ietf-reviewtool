@@ -402,4 +402,5 @@ class IetfReview:
                         "", fmt_comment(item, doc_pos, heading_level), wrap=False
                     )
 
-            doc_pos.update(nxt, cur)
+            if nxt is not None:
+                doc_pos.update(nxt, cur)

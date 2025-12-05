@@ -588,7 +588,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
     result = []
     for url in urls:
-        if reachability[url] == "":
+        if reachability[url] is None:
             result.append(url)
 
     if result:
@@ -602,7 +602,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
             continue
         if reachability[url] is not None:
             test_url = re.sub(r"^\w+:", r"https:", url)
-            if fetch_url(test_url, log, verbose, "HEAD"):
+            if fetch_url(test_url, log, verbose, "HEAD") is not None:
                 result.append(url)
 
     if result:
