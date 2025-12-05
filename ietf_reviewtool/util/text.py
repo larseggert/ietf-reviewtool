@@ -136,7 +136,7 @@ def extract_section_numbers(text: str) -> set[str]:
         match = SECTION_PATTERN.search(line)
         if match:
             # Extract the numeric part (e.g., "17.2.2.1" from "17.2.2.1.  Title")
-            num_match = re.match(r"^[\d.]+", match.group(0).strip())
+            num_match = re.match(r"^\d+(\.\d+)*", match.group(0).strip())
             if num_match:
                 section_numbers.add(num_match.group(0).rstrip("."))
     return section_numbers
