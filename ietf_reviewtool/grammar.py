@@ -1,4 +1,4 @@
-"""ietf-reviewtool grammr module"""
+"""ietf-reviewtool grammar module"""
 
 import math
 import re
@@ -10,6 +10,54 @@ from .review import IetfReview
 from .util.docposition import DocPosition
 from .util.text import unfold, wrap_para
 from .util.fetch import fetch_init_cache
+
+# Target chunk size for LanguageTool to avoid server heap space errors.
+# Chunks may exceed this if no paragraph break is found.
+TARGET_CHUNK_SIZE = 40000
+
+
+def _check_text_chunked(lt: language_tool_python.LanguageTool, full_text: str) -> list:
+    """
+    Check text for grammar issues, chunking at paragraph boundaries.
+
+    Splits large texts at paragraph boundaries (double newlines) to stay under
+    LanguageTool's size limits while preserving correct offset positions.
+    Chunks may exceed TARGET_CHUNK_SIZE if no paragraph break is found.
+
+    @param      lt         The LanguageTool instance
+    @param      full_text  The complete text to check
+
+    @return     List of grammar issues with offsets relative to full_text
+    """
+    if len(full_text) <= TARGET_CHUNK_SIZE:
+        return list(lt.check(full_text))
+
+    issues = []
+    chunk_start = 0
+
+    while chunk_start < len(full_text):
+        # Find the next paragraph break after TARGET_CHUNK_SIZE.
+        search_start = chunk_start + TARGET_CHUNK_SIZE
+        if search_start >= len(full_text):
+            chunk_end = len(full_text)
+        else:
+            next_para = full_text.find("\n\n", search_start)
+            if next_para == -1:
+                chunk_end = len(full_text)
+            else:
+                chunk_end = next_para + 2
+
+        chunk = full_text[chunk_start:chunk_end]
+        chunk_issues = lt.check(chunk)
+
+        # Adjust offsets to be relative to the full text.
+        for issue in chunk_issues:
+            issue.offset += chunk_start
+        issues.extend(chunk_issues)
+
+        chunk_start = chunk_end
+
+    return issues
 
 
 def check_grammar(
@@ -34,9 +82,10 @@ def check_grammar(
     lt = language_tool_python.LanguageTool("en-US")
     fetch_init_cache()
 
+    full_text = unfold("".join(text))
     issues = [
         i
-        for i in lt.check(unfold("".join(text)))
+        for i in _check_text_chunked(lt, full_text)
         if i.rule_id
         not in [
             "HYPHEN_TO_EN",
