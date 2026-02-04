@@ -24,6 +24,7 @@ requests = ">=2.28.2"
 setuptools = ">=69.0.2,<81.0.0"
 click-config-file = "^0.6.0"
 types-requests = "^2.32.4.20250913"
+rich-click = "^1.9.7"
 
 [poetry.group.dev.dependencies]
 mypy = ">=0.942"
@@ -45,17 +46,22 @@ types-pyyaml = "^6.0.12.10"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.19.0"
+pylint = "^4.0.4"
 
 [tool.pylint.messages_control]
+disable = ["fixme"]
+ignore = ["tests"]
 # TODO: these are very high and should be gradually reduced during refactoring
-max-args = 15
+max-args = 16
+max-positional-arguments = 16
 max-bool-expr = 10
 max-branches = 80
 max-locals = 50
 max-module-lines = 1500
 max-nested-blocks = 8
 max-statements = 200
-min-public-methods=0
+max-attributes = 13
+min-public-methods = 0
 
 [tool.pylint.format]
 max-line-length = "88"

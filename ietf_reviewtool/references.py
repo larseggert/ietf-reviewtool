@@ -10,7 +10,6 @@ from .util.fetch import fetch_meta, fetch_docs_in_last_call_text, fetch_dt
 from .util.text import untag, word_join, basename
 from .util.utils import duplicates, get_latest, die
 
-
 STATUS_RANK = {
     "internet standard": 3,
     "full standard": 3,

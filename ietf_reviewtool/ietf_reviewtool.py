@@ -32,11 +32,11 @@ import difflib
 import html
 import ipaddress
 import json
-import json5  # type: ignore
+import json5
 
-
-import click
-from click_config_file import configuration_option, configobj_provider
+import appdirs
+import rich_click as click
+from click_config_file import configuration_option, configobj_provider  # type: ignore
 
 from .agenda import get_current_agenda, get_items_on_agenda
 from .boilerplate import check_tlp, check_boilerplate
@@ -66,8 +66,9 @@ from .util.utils import (
     TEST_NET_V6,
 )
 
-
 log = logging.getLogger(__name__)
+
+CONFIG_FILE = os.path.join(appdirs.user_config_dir("ietf-reviewtool"), "config")
 
 
 # Map CLI option names to internal parameter names where they differ
@@ -114,10 +115,7 @@ class CLIConfigProvider(configobj_provider):
             if isinstance(value, dict):
                 continue
             # First check explicit mapping, then try hyphen-to-underscore
-            if key in CONFIG_KEY_MAP:
-                translated_key = CONFIG_KEY_MAP[key]
-            else:
-                translated_key = key.replace("-", "_")
+            translated_key = CONFIG_KEY_MAP.get(key, key.replace("-", "_"))
             translated[translated_key] = value
         return translated
 
@@ -134,7 +132,10 @@ class State:
         self.default = default
 
 
-CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "show_default": True}
+CONTEXT_SETTINGS = {
+    "help_option_names": ["-h", "--help"],
+    "show_default": True,
+}
 
 
 @click.group(help="Review tool for IETF documents.", context_settings=CONTEXT_SETTINGS)
@@ -168,6 +169,9 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "show_default": True}
     cmd_name="ietf-reviewtool",
     config_file_name="config",
     provider=CLIConfigProvider(section="global"),
+    help="Configuration file.",
+    default=CONFIG_FILE,
+    show_default=True,
 )
 @click.pass_context
 def cli(

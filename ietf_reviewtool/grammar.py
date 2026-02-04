@@ -4,7 +4,7 @@ import math
 import re
 import requests_cache
 
-import language_tool_python  # type: ignore
+import language_tool_python
 
 from .review import IetfReview
 from .util.docposition import DocPosition

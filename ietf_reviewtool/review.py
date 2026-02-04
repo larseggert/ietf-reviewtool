@@ -175,9 +175,7 @@ class IetfReview:
                 out.append(f"CC {self.gh_id}\n")
 
             if re.match(r"tsv-?art", self.role, flags=re.IGNORECASE):
-                out.append(
-                    inspect.cleandoc(
-                        """
+                out.append(inspect.cleandoc("""
                         This document has been reviewed as part of the transport
                         area review team's ongoing effort to review key IETF
                         documents. These comments were written primarily for the
@@ -190,41 +188,26 @@ class IetfReview:
                         should consider this review as part of the last-call
                         comments they receive. Please always CC tsv-art@ietf.org
                         if you reply to or forward this review.
-                        """
-                    )
-                    + "\n"
-                )
+                        """) + "\n")
             elif re.match(r"gen-?art-?early", self.role, flags=re.IGNORECASE):
-                out.append(
-                    inspect.cleandoc(
-                        """
+                out.append(inspect.cleandoc("""
                         I am the assigned Gen-ART reviewer for this draft. For
                         background on Gen-ART, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ). Please
                         resolve these comments along with any other comments you
                         may receive.
-                        """
-                    )
-                    + "\n"
-                )
+                        """) + "\n")
             elif re.match(r"gen-?art-?lc", self.role, flags=re.IGNORECASE):
-                out.append(
-                    inspect.cleandoc(
-                        """
+                out.append(inspect.cleandoc("""
                         I am the assigned Gen-ART reviewer for this draft. The
                         General Area Review Team (Gen-ART) reviews all IETF
                         documents being processed by the IESG for the IETF
                         Chair. Please treat these comments just like any other
                         last call comments. For more information, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
-                        """
-                    )
-                    + "\n"
-                )
+                        """) + "\n")
             elif re.match(r"gen-?art-?iesg", self.role, flags=re.IGNORECASE):
-                out.append(
-                    inspect.cleandoc(
-                        """
+                out.append(inspect.cleandoc("""
                         I am the assigned Gen-ART reviewer for this draft. The
                         General Area Review Team (Gen-ART) reviews all IETF
                         documents being processed by the IESG for the IETF
@@ -232,10 +215,7 @@ class IetfReview:
                         shepherd or AD before posting a new version of the
                         draft. For more information, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
-                        """
-                    )
-                    + "\n"
-                )
+                        """) + "\n")
 
         for category, comments in self.__data.items():
             if not comments:

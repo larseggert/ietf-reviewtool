@@ -335,8 +335,7 @@ COPYRIGHT_ALT_STREAMS_PART = r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+
         to\s+this\s+document\.\s*"""
 
 COPYRIGHT_IETF = re.compile(
-    COPYRIGHT_ALT_STREAMS_PART
-    + r"""Code\s+Components\s+extracted\s+from\s+
+    COPYRIGHT_ALT_STREAMS_PART + r"""Code\s+Components\s+extracted\s+from\s+
         this\s+document\s+must\s+include\s+(Simplified|Revised)\s+BSD\s+
         License\s+text\s+as\s+described\s+in\s+Section\s+4\.e\s+of\s+
         the\s+Trust\s+Legal\s+Provisions\s+and\s+are\s+provided\s+
