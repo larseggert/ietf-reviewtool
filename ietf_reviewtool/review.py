@@ -7,8 +7,10 @@ import textwrap
 
 from .doc import Doc
 from .util.docposition import DocPosition
-from .util.format import fmt_nit, fmt_comment
+from .util.format import fmt_comment, fmt_nit
 from .util.text import wrap_para
+
+_EMPTY_DIFF_LINES = {"+ \n", "- \n"}
 
 
 def strip_nits_from_diff(diff: list) -> list:
@@ -30,7 +32,7 @@ def strip_nits_from_diff(diff: list) -> list:
 
         kind = cur[0]
 
-        if cur in ["+ \n", "- \n"]:
+        if cur in _EMPTY_DIFF_LINES:
             prev = kind
             continue
 
@@ -139,26 +141,30 @@ class IetfReview:
         "Add a note to the review."
         self.__add("note", heading, content, wrap, end)
 
+    def _add_bullets(
+        self, kind: str, heading: str, header: str, bullets: list[str], end: str = "\n"
+    ) -> None:
+        self.__add(
+            kind, heading, self.__bulletize(header, bullets), wrap=False, end=end
+        )  # noqa: E501
+
     def discuss_bullets(
         self, heading: str, header: str, bullets: list[str], end: str = "\n"
     ) -> None:
         "Add a discuss bullet list to the review."
-        content = self.__bulletize(header, bullets)
-        self.__add("discuss", heading, content, wrap=False, end=end)
+        self._add_bullets("discuss", heading, header, bullets, end)
 
     def comment_bullets(
         self, heading: str, header: str, bullets: list[str], end: str = "\n"
     ) -> None:
         "Add a comment bullet list to the review."
-        content = self.__bulletize(header, bullets)
-        self.__add("comment", heading, content, wrap=False, end=end)
+        self._add_bullets("comment", heading, header, bullets, end)
 
     def nit_bullets(
         self, heading: str, header: str, bullets: list[str], end: str = "\n"
     ) -> None:
         "Add a nit bullet list to the review."
-        content = self.__bulletize(header, bullets)
-        self.__add("nit", heading, content, wrap=False, end=end)
+        self._add_bullets("nit", heading, header, bullets, end)
 
     def __str__(self) -> str:
         out = []
@@ -175,7 +181,8 @@ class IetfReview:
                 out.append(f"CC {self.gh_id}\n")
 
             if re.match(r"tsv-?art", self.role, flags=re.IGNORECASE):
-                out.append(inspect.cleandoc("""
+                out.append(
+                    inspect.cleandoc("""
                         This document has been reviewed as part of the transport
                         area review team's ongoing effort to review key IETF
                         documents. These comments were written primarily for the
@@ -188,26 +195,35 @@ class IetfReview:
                         should consider this review as part of the last-call
                         comments they receive. Please always CC tsv-art@ietf.org
                         if you reply to or forward this review.
-                        """) + "\n")
+                        """)
+                    + "\n"
+                )
             elif re.match(r"gen-?art-?early", self.role, flags=re.IGNORECASE):
-                out.append(inspect.cleandoc("""
+                out.append(
+                    inspect.cleandoc("""
                         I am the assigned Gen-ART reviewer for this draft. For
                         background on Gen-ART, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ). Please
                         resolve these comments along with any other comments you
                         may receive.
-                        """) + "\n")
+                        """)
+                    + "\n"
+                )
             elif re.match(r"gen-?art-?lc", self.role, flags=re.IGNORECASE):
-                out.append(inspect.cleandoc("""
+                out.append(
+                    inspect.cleandoc("""
                         I am the assigned Gen-ART reviewer for this draft. The
                         General Area Review Team (Gen-ART) reviews all IETF
                         documents being processed by the IESG for the IETF
                         Chair. Please treat these comments just like any other
                         last call comments. For more information, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
-                        """) + "\n")
+                        """)
+                    + "\n"
+                )
             elif re.match(r"gen-?art-?iesg", self.role, flags=re.IGNORECASE):
-                out.append(inspect.cleandoc("""
+                out.append(
+                    inspect.cleandoc("""
                         I am the assigned Gen-ART reviewer for this draft. The
                         General Area Review Team (Gen-ART) reviews all IETF
                         documents being processed by the IESG for the IETF
@@ -215,7 +231,14 @@ class IetfReview:
                         shepherd or AD before posting a new version of the
                         draft. For more information, please see the
                         [FAQ](https://wiki.ietf.org/group/gen/GenArtFAQ).
-                        """) + "\n")
+                        """)
+                    + "\n"
+                )
+        else:
+            title = f"Review of {self.doc.name}-{self.doc.revision}"
+            out.append("=" * self.width)
+            out.append(title.center(self.width))
+            out.append("=" * self.width + "\n")
 
         for category, comments in self.__data.items():
             if not comments:
@@ -237,8 +260,11 @@ class IetfReview:
                 out.append(wrap_para(self.boilerplate[category], "\n", self.width))
 
             for heading, content in comments.items():
-                if heading and self.mkd:
-                    out.append(f"### {heading}\n")
+                if heading:
+                    if self.mkd:
+                        out.append(f"### {heading}\n")
+                    else:
+                        out.append(f"\n{heading}\n")
                 out.extend(content)
         return "\n".join(out)
 
@@ -288,7 +314,7 @@ class IetfReview:
             nxt = diff[num + 1] if num < len(diff) - 1 else None
             nxt_kind = nxt[0] if nxt else None
 
-            if cur in ["+ \n", "- \n"]:
+            if cur in _EMPTY_DIFF_LINES:
                 prev = kind
                 if nxt:
                     continue
@@ -365,7 +391,7 @@ class IetfReview:
 
             if "txt_ok" in item:
                 kind = cur[0]
-                if item["ctx_ok"] is False:
+                if not item["ctx_ok"]:
                     if kind != " ":
                         item["txt"].append(cur)
                         item["ctx_ok"] = True

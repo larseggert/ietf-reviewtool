@@ -1,5 +1,6 @@
 """ietf-reviewtool fetch module"""
 
+import asyncio
 import base64
 import datetime
 import gzip
@@ -7,155 +8,233 @@ import json
 import logging
 import os
 import re
+import threading
 import urllib.request
+from typing import Any, cast
 
-from typing import Optional
-
-import appdirs
-import requests
-import requests_cache
-
+import hishel
+import httpx
+import platformdirs
+from hishel import BaseFilter, FilterPolicy
+from hishel.httpx import AsyncCacheClient, AsyncCacheTransport
 
 from .text import basename, strip_pagination
 from .utils import get_latest, read, write
 
 
-def fetch_init_cache(log: Optional[logging.Logger] = None) -> None:
-    """
-    Initialize the fetch cache.
+class _ForceCache(BaseFilter):
+    """Cache 2xx responses for our TTL, ignoring HTTP cache-control headers.
 
-    @param      log   The log to write to
+    Error responses (4xx/5xx) are intentionally NOT cached so that transient
+    failures don't poison the cache for 30 days.
     """
-    cache = appdirs.user_cache_dir("ietf-reviewtool")
-    if not os.path.isdir(cache):
-        os.mkdir(cache)
-    if log:
-        log.debug("Using cache directory %s", cache)
-    requests_cache.install_cache(
-        cache_name=os.path.join(cache, "ietf-reviewtool"),
-        backend="sqlite",
-        allowable_codes=[200],
-        stale_if_error=False,
-        match_headers=True,
-        expire_after=datetime.timedelta(days=30),
+
+    def needs_body(self) -> bool:
+        return False
+
+    def apply(self, item: Any, body: bytes | None) -> bool:
+        return bool(200 <= item.status_code < 300)
+
+
+_CACHE_POLICY = FilterPolicy(response_filters=[_ForceCache()])
+
+# ---------------------------------------------------------------------------
+# Background event loop — all async HTTP runs here, bridged from sync code.
+# ---------------------------------------------------------------------------
+_loop = asyncio.new_event_loop()
+threading.Thread(target=_loop.run_forever, daemon=True, name="irt-fetch").start()
+
+
+def run_async(coro: Any) -> Any:
+    """Submit a coroutine to the background loop and block until done.
+
+    MUST NOT be called from within a coroutine already running on _loop —
+    that would deadlock. Inside fetch_parallel tasks, call the _async
+    variants (fetch_url_async, fetch_dt_async, fetch_meta_async) directly.
+    """
+    return asyncio.run_coroutine_threadsafe(coro, _loop).result()
+
+
+# Private alias kept for internal use within this module.
+_run = run_async
+
+
+# ---------------------------------------------------------------------------
+# HTTP clients (lazy, initialised on first use inside the event loop).
+# ---------------------------------------------------------------------------
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/90.0.4430.72 Safari/537.36"
     )
+}
+_LIMITS = httpx.Limits(max_connections=64, max_keepalive_connections=32)
+_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
+
+_client: httpx.AsyncClient | None = None
+_cached_client: httpx.AsyncClient | None = None
+
+
+def _plain_transport() -> httpx.AsyncHTTPTransport:
+    # http3=True can be added here once httpx exposes stable H3 support.
+    return httpx.AsyncHTTPTransport(http2=True, limits=_LIMITS)
+
+
+async def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(
+            transport=_plain_transport(),
+            headers=_HEADERS,
+            follow_redirects=True,
+            timeout=_TIMEOUT,
+        )
+    return _client
+
+
+async def _get_cached_client(
+    log: logging.Logger | None = None,
+) -> httpx.AsyncClient:
+    global _cached_client
+    if _cached_client is None:
+        cache_dir = platformdirs.user_cache_dir("ietf-reviewtool")
+        os.makedirs(cache_dir, exist_ok=True)
+        if log:
+            log.debug("Using cache directory %s", cache_dir)
+        storage = hishel.AsyncSqliteStorage(
+            database_path=os.path.join(cache_dir, "ietf-reviewtool.db"),
+            default_ttl=datetime.timedelta(days=30).total_seconds(),
+        )
+        _cached_client = AsyncCacheClient(
+            transport=AsyncCacheTransport(
+                next_transport=_plain_transport(),
+                storage=storage,
+                policy=_CACHE_POLICY,
+            ),
+            headers=_HEADERS,
+            follow_redirects=True,
+            timeout=_TIMEOUT,
+        )
+    return _cached_client
+
+
+# ---------------------------------------------------------------------------
+# Async fetch primitives — call these inside fetch_parallel lambdas.
+# ---------------------------------------------------------------------------
+
+
+async def fetch_url_async(
+    url: str,
+    log: logging.Logger,
+    use_cache: bool = True,
+    method: str = "GET",
+) -> str | None:
+    if url.startswith("ftp:") or url.startswith("file:"):
+        try:
+            log.debug("%s nocache %s", method.lower(), url)
+            with urllib.request.urlopen(url) as response:
+                return cast(str, response.read())
+        except urllib.error.URLError as err:
+            log.debug("%s -> %s", url, err)
+            return None
+
+    client = await (_get_cached_client(log) if use_cache else _get_client())
+    extra_headers: dict[str, str] = {}
+
+    log.debug("%s %scache %s", method.lower(), "" if use_cache else "no", url)
+    while True:
+        try:
+            response = await client.request(method, url, headers=extra_headers or None)
+            if method == "HEAD" and response.status_code == 403 and response.history:
+                log.debug(
+                    "%s -> redirect to %s -> 403 (treating as valid)",
+                    url,
+                    str(response.url),
+                )
+                return ""
+            response.raise_for_status()
+        except httpx.HTTPStatusError as err:
+            log.debug("%s -> %s", url, err)
+            if method == "HEAD":
+                log.debug("Retrying %s with Range-header GET", url)
+                extra_headers["Range"] = "bytes=0-100"
+                method = "GET"
+                continue
+            return None
+        except httpx.RequestError as err:
+            log.debug("%s -> %s", url, err)
+            return None
+        return response.text if method != "HEAD" else ""
+
+
+async def fetch_dt_async(datatracker: str, query: str, log: logging.Logger) -> dict:
+    api = "/api/v1/"
+    if not query.startswith(api):
+        query = api + query
+    query += "&format=json" if "?" in query else "?format=json"
+    content = await fetch_url_async(datatracker + query, log)
+    if content:
+        result = json.loads(content)
+        objects = result["objects"] if "objects" in result else result
+        return cast(dict[Any, Any], objects)
+    return {}
+
+
+async def fetch_meta_async(datatracker: str, doc: str, log: logging.Logger) -> dict:
+    url = datatracker + "/doc/" + doc + "/doc.json"
+    meta = await fetch_url_async(url, log)
+    if not meta:
+        log.info("No metadata available for %s", doc)
+        return {}
+    return cast(dict[Any, Any], json.loads(meta))
+
+
+# ---------------------------------------------------------------------------
+# Sync wrappers — for single calls from non-async code.
+# ---------------------------------------------------------------------------
 
 
 def fetch_url(
     url: str, log: logging.Logger, use_cache: bool = True, method: str = "GET"
 ) -> str | None:
-    """
-    Fetches the resource at the given URL or checks its reachability (when
-    method is "HEAD".) A failing HEAD request is retried as a GET, since some
-    servers apparently don't like HEAD.
-
-    @param      url        The URL to fetch
-    @param      log        The log to write to
-    @param      use_cache  Whether to use the local cache or not
-    @param      method     The method to use (default "GET")
-
-    @return     The decoded content of the resource (or the empty string for a
-                successful HEAD request). None if an error occurred.
-    """
-    if url.startswith("ftp:") or url.startswith("file:"):
-        try:
-            log.debug(
-                "%s %scache %s",
-                method.lower(),
-                "no" if not use_cache else "",
-                url,
-            )
-            with urllib.request.urlopen(url) as response:
-                return response.read()
-        except urllib.error.URLError as err:
-            log.debug("%s -> %s", url, err)
-            return None
-
-    while True:
-        try:
-            log.debug(
-                "%s %scache %s",
-                method.lower(),
-                "no" if not use_cache else "",
-                url,
-            )
-            headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/90.0.4430.72 Safari/537.36"
-                )
-            }
-            if use_cache:
-                if requests_cache.is_installed() is False:
-                    fetch_init_cache(log)
-            else:
-                if requests_cache.is_installed():
-                    requests_cache.uninstall_cache()
-
-            response = requests.request(
-                method,
-                url,
-                allow_redirects=True,
-                timeout=20,
-                headers=headers,
-            )
-            # For HEAD requests, treat a 403 after a redirect as valid.
-            # This handles bot-protected destinations (e.g., Cloudflare) that
-            # block automated clients after a valid redirect (e.g., from doi.org).
-            if method == "HEAD" and response.status_code == 403 and response.history:
-                log.debug(
-                    "%s -> redirect to %s -> 403 (treating as valid)",
-                    url,
-                    response.url,
-                )
-                return ""
-            response.raise_for_status()
-        except requests.exceptions.RequestException as err:
-            log.debug("%s -> %s", url, err)
-            if method == "HEAD":
-                log.debug("Retrying %s with Range-header GET", url)
-                headers["Range"] = "bytes=0-100"
-                method = "GET"
-                continue
-            return None
-        return response.text if method != "HEAD" else ""
+    return cast(str | None, _run(fetch_url_async(url, log, use_cache, method)))
 
 
 def fetch_dt(datatracker: str, query: str, log: logging.Logger) -> dict:
-    """
-    Return dict of JSON query results from datatracker.
+    return cast(dict[Any, Any], _run(fetch_dt_async(datatracker, query, log)))
 
-    @param      datatracker  The datatracker URL to use
-    @param      query        The query to return data for
 
-    @return     The query results.
+def fetch_meta(datatracker: str, doc: str, log: logging.Logger) -> dict:
+    return cast(dict[Any, Any], _run(fetch_meta_async(datatracker, doc, log)))
+
+
+# ---------------------------------------------------------------------------
+# Parallel fetch — tasks must be callables returning coroutines.
+# ---------------------------------------------------------------------------
+
+
+def fetch_parallel(tasks: dict) -> dict:
+    """Run coroutine-returning callables in parallel on the background loop.
+
+    Usage:
+        fetch_parallel({n: lambda n=n: fetch_meta_async(dt, n, log) for n in names})
     """
-    api = "/api/v1/"
-    if not query.startswith(api):
-        query = api + query
-    if re.search(r"\?", query):
-        query += "&format=json"
-    else:
-        query += "?format=json"
-    content = fetch_url(datatracker + query, log)
-    if content:
-        result = json.loads(content)
-        return result["objects"] if "objects" in result else result
-    return {}
+
+    async def _gather() -> dict:
+        keys = list(tasks.keys())
+        results = await asyncio.gather(*[tasks[k]() for k in keys])
+        return dict(zip(keys, results))
+
+    return cast(dict, _run(_gather()))
+
+
+# ---------------------------------------------------------------------------
+# Higher-level helpers (sequential by design — fallback logic inside).
+# ---------------------------------------------------------------------------
 
 
 def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str | None:
-    """
-    Download related document writeups for an item from the datatracker.
-
-    @param      datatracker  The datatracker URL to use
-    @param      item         The item to download write-ups for
-    @param      log          The log to write to
-
-    @return     The text of the writeup, if only a single one existed, else
-                None.
-    """
     doc_events = fetch_dt(
         datatracker, "doc/writeupdocevent/?doc__name=" + basename(item), log
     )
@@ -192,14 +271,6 @@ def get_writeups(datatracker: str, item: str, log: logging.Logger) -> str | None
 
 
 def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> set:
-    """
-    Fetches IDs and RFCs mentioned in the last-call message. The *assumption*
-    is that they are all called-out downrefs.
-
-    @param      name  The name of this document.
-
-    @return     The RFC numbers mention in the last-call email.
-    """
     last_call = read("last_call_text/" + name, log)
     if not last_call:
         return set()
@@ -208,27 +279,8 @@ def fetch_docs_in_last_call_text(name: str, log: logging.Logger) -> set:
         last_call,
         flags=re.IGNORECASE,
     )
-
-    docs = [re.sub(r"\s+", "", n.lower()) for n in docs]
-    docs = [re.sub(r"-\d+$", "", n) for n in docs]
+    docs = [re.sub(r"-\d+$", "", re.sub(r"\s+", "", n.lower())) for n in docs]
     return set(docs)
-
-
-def fetch_meta(datatracker: str, doc: str, log: logging.Logger) -> dict:
-    """
-    Fetches metadata for doc from datatracker.
-
-    @param      datatracker  The datatracker URL to use
-    @param      doc          The document to fetch metadata for
-
-    @return     The metadata, or None
-    """
-    url = datatracker + "/doc/" + doc + "/doc.json"
-    meta = fetch_url(url, log)
-    if not meta:
-        log.info("No metadata available for %s", doc)
-        return {}
-    return json.loads(meta)
 
 
 def get_items(
@@ -236,24 +288,10 @@ def get_items(
     log: logging.Logger,
     datatracker: str,
     strip: bool = True,
-    get_writeup=False,
-    get_xml=True,
-    extract_md=True,
+    get_writeup: bool = False,
+    get_xml: bool = True,
+    extract_md: bool = True,
 ) -> list:
-    """
-    Download named items into files of the same name in the current directory.
-    Does not overwrite existing files. Names need to include the revision, and
-    may or may not include the ".txt" suffix.
-
-    @param      items        The items to download
-    @param      datatracker  The datatracker URL to use
-    @param      strip        Whether to run strip() on the downloaded item
-    @param      get_writeup  Whether to download associated write-ups
-    @param      get_xml      Whether to download XML sources
-    @param      extract_md   Whether to extract Markdown from XML sources
-
-    @return     List of file names written or existing
-    """
     result = []
     for item in items:
         do_strip = strip
@@ -285,7 +323,6 @@ def get_items(
             if which == "conflict-review":
                 doc = re.sub(which + r"-(.*)", r"draft-\1", item)
             else:
-                # FIXME: figure out how to download status change text
                 continue
             text = get_writeups(datatracker, doc, log) or ""
             doc = basename(doc)
@@ -304,8 +341,6 @@ def get_items(
                 continue
             items.append(f"{alias['name']}-{alias['rev']}.txt")
             do_strip = False
-        # else:
-        #     die(f"Unknown item type: {item}", log)
 
         if not text and url:
             text = fetch_url(url, log) or ""
@@ -323,7 +358,6 @@ def get_items(
 
         if text:
             if file_name.endswith(".xml") and extract_md:
-                # try and extract markdown
                 mkd = re.search(
                     r"<!--\s*##markdown-source:(.*)-->",
                     text,
@@ -335,7 +369,6 @@ def get_items(
                     with open(mkd_file, "wb") as file:
                         file.write(gzip.decompress(base64.b64decode(mkd[1])))
                     result.append(mkd_file)
-
             elif do_strip:
                 log.debug("Stripping %s", item)
                 text = strip_pagination(text)
@@ -346,7 +379,6 @@ def get_items(
             get_writeups(datatracker, item, log)
 
         if get_xml and item.startswith("draft-") and file_name.endswith(".txt"):
-            # also try and get XML source
             items.append(re.sub(r"\.txt$", ".xml", file_name))
 
     return result

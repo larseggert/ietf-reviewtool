@@ -23,7 +23,7 @@ def check_tlp(doc: Doc, review: IetfReview) -> None:
             "Publication Limitation clause. This means it can in most cases "
             "not be a WG document."
         )
-        if doc.status.lower() == "standards track":
+        if doc.status_lower == "standards track":
             msg += " And it cannot be published on the Standards Track."
         review.discuss("Boilerplate", msg)
 
@@ -51,24 +51,22 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
 
     doc_minus_boilerplate = re.sub(BOILERPLATE_8174_PATTERN, "", doc.orig)
     doc_minus_boilerplate = re.sub(BOILERPLATE_2119_PATTERN, "", doc_minus_boilerplate)
-    doc_minus_boilerplate = re.sub(BOILERPLATE_2119_PATTERN, "", doc_minus_boilerplate)
+    doc_minus_boilerplate = re.sub(BOILERPLATE_BEGIN_PATTERN, "", doc_minus_boilerplate)
     uses_keywords = set(re.findall(KEYWORDS_PATTERN, doc_minus_boilerplate))
 
     msg = None
     if uses_keywords:
-        used_keywords = []
-        for word in set(uses_keywords):
-            used_keywords.append(normalize_ws(word))
+        used_keywords = [normalize_ws(word) for word in set(uses_keywords)]
         used_keywords_str = word_join(used_keywords, prefix='"', suffix='"')
         kw_text = f"keyword{'s' if len(uses_keywords) > 1 else ''}"
 
-        if doc.status.lower() == "unknown":
+        if doc.status_lower == "unknown":
             review.comment(
                 "Boilerplate",
                 "Document boilerplate does not seem to indicate the intended "
                 "RFC status.",
             )
-        elif doc.status.lower() in ["informational", "experimental"]:
+        elif doc.status_lower in ["informational", "experimental"]:
             review.comment(
                 "Boilerplate",
                 f"Document has {doc.status} status, but uses the RFC2119 "
@@ -101,7 +99,7 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
     if uses_keywords:
         lc_not = set(re.findall(LC_NOT_KEYWORDS_PATTERN, doc.orig))
         if lc_not:
-            lc_not_str = word_join(list(lc_not), prefix='"', suffix='"')
+            lc_not_str = word_join(lc_not, prefix='"', suffix='"')
             review.comment(
                 "RFC2119 style",
                 f'Using lowercase "not" together with an uppercase '
@@ -113,7 +111,7 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
     for line in doc.orig_lines:
         if re.match(r"^\s+$", line):
             continue
-        if len(sotm) == 0:
+        if not sotm:
             if re.match(
                 r"^\s*Status\s+of\s+This\s+Memo\s*$", line, flags=re.IGNORECASE
             ):
@@ -154,8 +152,7 @@ def check_boilerplate(doc: Doc, review: IetfReview) -> None:
         sotm = re.sub(COPYRIGHT_ALT_STREAMS, r"", sotm)
         review.comment(
             "Boilerplate",
-            'Document contains a TLP Section 6.b.ii "alternate streams" '
-            "boilerplate.",
+            'Document contains a TLP Section 6.b.ii "alternate streams" boilerplate.',
         )
     else:
         review.comment(
@@ -335,7 +332,8 @@ COPYRIGHT_ALT_STREAMS_PART = r"""Copyright\s+\(c\)\s+20\d{2}\s+IETF\s+Trust\s+
         to\s+this\s+document\.\s*"""
 
 COPYRIGHT_IETF = re.compile(
-    COPYRIGHT_ALT_STREAMS_PART + r"""Code\s+Components\s+extracted\s+from\s+
+    COPYRIGHT_ALT_STREAMS_PART
+    + r"""Code\s+Components\s+extracted\s+from\s+
         this\s+document\s+must\s+include\s+(Simplified|Revised)\s+BSD\s+
         License\s+text\s+as\s+described\s+in\s+Section\s+4\.e\s+of\s+
         the\s+Trust\s+Legal\s+Provisions\s+and\s+are\s+provided\s+

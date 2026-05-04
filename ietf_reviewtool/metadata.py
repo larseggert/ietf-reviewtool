@@ -6,10 +6,10 @@ import re
 import num2words  # type: ignore
 
 from .doc import Doc
-from .review import IetfReview
-from .util.fetch import fetch_meta
-from .util.text import word_join
 from .references import STATUS_RANK
+from .review import IetfReview
+from .util.fetch import fetch_meta_async, fetch_parallel
+from .util.text import word_join
 
 
 def check_meta(
@@ -26,16 +26,16 @@ def check_meta(
     @return     { description_of_the_return_value }
     """
 
-    level = doc.meta["std_level"] or doc.meta["intended_std_level"]
+    level = doc.meta.get("std_level") or doc.meta.get("intended_std_level")
     if not level:
         review.discuss(
             "Missing RFC status",
             "Datatracker does not record an intended RFC status for this document.",
         )
     else:
-        if doc.status.lower() != level.lower() and (
+        if doc.status_lower != level.lower() and (
             level.lower() != "proposed standard"
-            or doc.status.lower() != "standards track"
+            or doc.status_lower != "standards track"
         ):
             review.discuss(
                 "Unclear RFC status",
@@ -43,7 +43,7 @@ def check_meta(
                 f'document says "{doc.status}".',
             )
             # continue checking with the "higher" of the two statuses
-            if STATUS_RANK[level.lower()] > STATUS_RANK[doc.status.lower()]:
+            if STATUS_RANK[level.lower()] > STATUS_RANK[doc.status_lower]:
                 doc.status = level
                 log.info(f"Conflicting status info; checking as {doc.status}")
 
@@ -57,9 +57,7 @@ def check_meta(
             "agreed that this is appropriate?",
         )
 
-    iana_review_state = (
-        doc.meta["iana_review_state"] if "iana_review_state" in doc.meta else None
-    )
+    iana_review_state = doc.meta.get("iana_review_state")
     if iana_review_state:
         if re.match(r".*Not\s+OK", iana_review_state, flags=re.IGNORECASE):
             review.discuss(
@@ -74,7 +72,7 @@ def check_meta(
                 "The IANA review of this document seems to not have concluded yet.",
             )
 
-    consensus = doc.meta["consensus"] if "consensus" in doc.meta else None
+    consensus = doc.meta.get("consensus")
     if consensus is None:
         review.comment(
             "Unclear consensus",
@@ -82,12 +80,20 @@ def check_meta(
             "consensus boilerplate should be included in this document.",
         )
 
-    stream = doc.meta["stream"] if "stream" in doc.meta else None
+    stream = doc.meta.get("stream")
     if stream != "IETF":
         review.comment(
             "Unusual stream",
             "This does not seem to be an IETF-stream document.",
         )
+
+    all_rel_docs = {rd for rel_docs in doc.relationships.values() for rd in rel_docs}
+    rel_meta = fetch_parallel(
+        {
+            rd: lambda rd=rd: fetch_meta_async(datatracker, "rfc" + rd, log)
+            for rd in all_rel_docs
+        }
+    )
 
     for rel, rel_docs in doc.relationships.items():
         if rel == "updates":
@@ -105,15 +111,14 @@ def check_meta(
                 )
 
         for rel_doc in rel_docs:
-            meta = fetch_meta(datatracker, "rfc" + rel_doc, log)
+            meta = rel_meta.get(rel_doc)
             level = (
                 meta["std_level"] or meta["intended_std_level"] if meta else "Unknown"
             )
             if not relationship_ok(doc.status, level):
                 review.discuss(
                     f"{rel.capitalize()} issue",
-                    f"This {doc.status} document {rel} RFC{rel_doc}, "
-                    f"which is {level}.",
+                    f"This {doc.status} document {rel} RFC{rel_doc}, which is {level}.",
                 )
 
 

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Any, cast
 
 from .util.fetch import fetch_url
 
@@ -18,7 +19,7 @@ def get_current_agenda(datatracker: str, log: logging.Logger) -> dict:
     agenda = fetch_url(datatracker + "/iesg/agenda/agenda.json", log, use_cache=False)
     if not agenda:
         return {}
-    return json.loads(agenda)
+    return cast(dict[Any, Any], json.loads(agenda))
 
 
 def get_items_on_agenda(agenda: dict) -> list:
@@ -29,13 +30,9 @@ def get_items_on_agenda(agenda: dict) -> list:
 
     @return     A list of the items on the given agenda.
     """
-    items = []
-    if "sections" in agenda:
-        for _, sec in agenda["sections"].items():
-            for doc_type in ["docs", "wgs"]:
-                if doc_type in sec:
-                    for doc in sec[doc_type]:
-                        items.append(
-                            doc["docname"] + ("-" + doc["rev"] if "rev" in doc else "")
-                        )
-    return items
+    return [
+        doc["docname"] + ("-" + doc["rev"] if "rev" in doc else "")
+        for _, sec in agenda.get("sections", {}).items()
+        for doc_type in ["docs", "wgs"]
+        for doc in sec.get(doc_type, [])
+    ]

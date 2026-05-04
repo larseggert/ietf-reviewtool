@@ -1,14 +1,14 @@
 """ietf-reviewtool inclusive module"""
 
-import itertools
 import logging
 import re
+
 import yaml
 
 from .doc import Doc
 from .review import IetfReview
 from .util.fetch import fetch_url
-from .util.text import word_join, unfold
+from .util.text import unfold, word_join
 
 
 def check_inclusivity(
@@ -42,12 +42,8 @@ def check_inclusivity(
             pattern = re.sub(r"/(.*)/.*", r"((\1)\\w*)", pattern)
             matches = re.findall(pattern, unfold(doc.orig), flags=re.IGNORECASE)
             if matches:
-                hits = set(map(str.lower, itertools.chain(*matches)))
-                result[name] = (
-                    [hit for hit in hits if hit != ""],
-                    pattern,
-                    data["alternatives"] if "alternatives" in data else None,
-                )
+                hits = {m.lower() for match in matches for m in match if m}
+                result[name] = (list(hits), pattern, data.get("alternatives"))
 
     if result:
         comment_header = (
@@ -59,7 +55,7 @@ def check_inclusivity(
         quote = "`" if review.mkd else '"'
         for name, match in result.items():
             terms = word_join(match[0], prefix=quote, suffix=quote)
-            msg = f'Term{"s" if len(match[0]) > 1 else ""} {terms}; '
+            msg = f"Term{'s' if len(match[0]) > 1 else ''} {terms}; "
             if match[2]:
                 msg += "alternatives might be "
                 msg += ", ".join([f"{quote}{a}{quote}" for a in match[2]])

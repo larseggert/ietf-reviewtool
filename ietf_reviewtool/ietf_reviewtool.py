@@ -21,54 +21,70 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
-import logging
-import os
-import re
-import xml.etree.ElementTree
-
-from typing import Union
-
+import asyncio
 import difflib
 import html
 import ipaddress
 import json
-import json5
+import logging
+import os
+import re
+import sys
+import xml.etree.ElementTree
 
-import appdirs
+import darkdetect
+import platformdirs
+import rich_click
 import rich_click as click
-from click_config_file import configuration_option, configobj_provider  # type: ignore
+from click_config_file import configobj_provider, configuration_option  # type: ignore
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.syntax import Syntax
+from rich.text import Text
 
 from .agenda import get_current_agenda, get_items_on_agenda
-from .boilerplate import check_tlp, check_boilerplate
+from .boilerplate import check_boilerplate, check_tlp
+from .doc import Doc
 from .grammar import check_grammar
 from .inclusive import check_inclusivity
 from .metadata import check_meta
 from .references import check_refs
 from .review import IetfReview
-from .doc import Doc
-
-from .util.fetch import fetch_url, fetch_dt, get_items
+from .util.fetch import (
+    fetch_dt_async,
+    fetch_parallel,
+    fetch_url_async,
+    get_items,
+    run_async,
+)
 from .util.text import (
-    word_join,
     extract_ips,
     extract_urls,
     strip_pagination,
-    unfold,
     undo_rfc8792,
+    unfold,
+    word_join,
 )
-from .util.utils import (
-    read,
-    write,
-    TEST_NET_1,
-    TEST_NET_2,
-    TEST_NET_3,
-    MCAST_TEST_NET,
-    TEST_NET_V6,
-)
+from .util.utils import is_test_ip, read, write
 
 log = logging.getLogger(__name__)
 
-CONFIG_FILE = os.path.join(appdirs.user_config_dir("ietf-reviewtool"), "config")
+CONFIG_FILE = os.path.join(platformdirs.user_config_dir("ietf-reviewtool"), "config")
+
+_RE_EQUALS = re.compile(r"^={3,}$")
+_RE_DASHES = re.compile(r"^-{3,}$")
+_SECTION_NAMES = frozenset(("COMMENT", "DISCUSS", "NIT", "NOTE", "PREFACE"))
+
+
+def _plaintext_style(stripped_line: str) -> str | None:
+    "Return a Rich style for a plain-text review line, or None for body text."
+    if _RE_EQUALS.match(stripped_line):
+        return "bold"
+    if _RE_DASHES.match(stripped_line):
+        return "bold blue"
+    if stripped_line in _SECTION_NAMES:
+        return "bold yellow"
+    return None
 
 
 # Map CLI option names to internal parameter names where they differ
@@ -138,11 +154,40 @@ CONTEXT_SETTINGS = {
 }
 
 
+class _ReviewCommand(rich_click.RichCommand):
+    """review subcommand: resolves {default_enable} placeholder in help strings."""
+
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(*args, **kwargs)
+        # Maps param id → original help template, populated on first format_help call.
+        self._help_templates: dict[int, str] = {}
+
+    def format_help(  # type: ignore[override]
+        self, ctx: rich_click.RichContext, formatter: rich_click.RichHelpFormatter
+    ) -> None:
+        default_val = (
+            ctx.obj.default if (ctx.obj and hasattr(ctx.obj, "default")) else True
+        )
+        for param in self.params:
+            if not isinstance(param, click.Option) or "{default_enable}" not in (
+                param.help or ""
+            ):
+                continue
+            pid = id(param)
+            if pid not in self._help_templates:
+                self._help_templates[pid] = param.help or ""
+            param.help = self._help_templates[pid].replace(
+                "{default_enable}", str(default_val)
+            )
+        super().format_help(ctx, formatter)
+
+
 @click.group(help="Review tool for IETF documents.", context_settings=CONTEXT_SETTINGS)
 @click.option(
     "--default-enable/--no-default-enable",
     "default",
     default=True,
+    show_default=False,
     help="Whether all checks are enabled by default.",
 )
 @click.option(
@@ -186,9 +231,18 @@ def cli(
     @param      default      Whether all checks are enabled as a default
     @param      width        The character width any output should be wrapped to
     """
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        handlers=[RichHandler(rich_tracebacks=True, show_path=False)],
+        format="%(message)s",
+    )
+    for noisy in (
+        "httpx", "httpcore", "hishel", "hpack", "h2",
+        "language_tool_python", "urllib3", "markdown_it",
+    ):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     datatracker = re.sub(r"/+$", "", datatracker)
     ctx.obj = State(datatracker, verbose, default, width)
-    log.setLevel(logging.INFO if verbose == 0 else logging.DEBUG)
 
 
 @click.command("extract-urls", help="Extract URLs from items.")
@@ -203,8 +257,7 @@ def cli(
     "--include-common/--no-include-common",
     "common",
     default=True,
-    help="Include URLs that are common in IETF documents "
-    "(e.g., from the boilerplate).",
+    help="Include URLs that are common in IETF documents (e.g., from the boilerplate).",
 )
 @configuration_option(
     implicit=True,
@@ -348,20 +401,10 @@ def strip_items(items: list, in_place: bool = False) -> None:
         write(text, item)
 
 
-def thank_art_reviewer(
+async def _thank_art_reviewer_async(
     doc: Doc, review: IetfReview, thank_art: str, datatracker: str
 ) -> None:
-    """
-    Add a thank-you note to the member of the indicated review team.
-
-    @param      doc          The document text
-    @param      review       IETF Review object
-    @param      thank_art    The acronym of a review team
-    @param      datatracker  The datatracker URL
-
-    @return     None
-    """
-    art_reviews = fetch_dt(
+    art_reviews = await fetch_dt_async(
         datatracker,
         "doc/reviewassignmentdocevent/?doc__name=" + doc.name,
         log,
@@ -370,57 +413,46 @@ def thank_art_reviewer(
         log.warning("Could not fetch ART reviews for %s", doc.name)
         return
 
-    thanked = set()
+    thanked: set = set()
     for rev_assignment in art_reviews:
         if rev_assignment["type"] != "closed_review_assignment":
             continue
 
-        assignment = fetch_dt(
-            datatracker,
-            rev_assignment["review_assignment"],
-            log,
+        assignment = await fetch_dt_async(
+            datatracker, rev_assignment["review_assignment"], log
         )
-
         if not assignment:
             log.warning("Could not fetch review_assignment for %s", doc.name)
             continue
 
-        reviewer = fetch_dt(datatracker, assignment["reviewer"], log)
-
-        if not reviewer:
-            log.warning("Could not fetch reviewer for %s", doc.name)
-            continue
-
-        reviewer = fetch_dt(datatracker, reviewer["person"], log)
-
-        if not reviewer:
-            log.warning("Could not fetch reviewer for %s", doc.name)
-            continue
-
-        if assignment["state"].endswith("rejected/"):
-            log.debug("Review for %s was rejected", doc.name)
-            continue
-
-        if assignment["state"].endswith("no-response/"):
-            log.debug("Review for %s was not completed", doc.name)
-            continue
-
-        if assignment["state"].endswith("withdrawn/"):
-            log.debug("Review for %s was withdrawn", doc.name)
+        if assignment["state"].endswith(("rejected/", "no-response/", "withdrawn/")):
+            log.debug("Review for %s was skipped (%s)", doc.name, assignment["state"])
             continue
 
         if not assignment["review"]:
             log.warning("Could not fetch review for %s", doc.name)
             continue
 
-        art_review = fetch_dt(datatracker, assignment["review"], log)
-
+        # reviewer lookup and art_review lookup are independent — run in parallel
+        reviewer_email, art_review = await asyncio.gather(
+            fetch_dt_async(datatracker, assignment["reviewer"], log),
+            fetch_dt_async(datatracker, assignment["review"], log),
+        )
+        if not reviewer_email:
+            log.warning("Could not fetch reviewer for %s", doc.name)
+            continue
         if not art_review:
             log.warning("Could not fetch review for %s", doc.name)
             continue
 
-        group = fetch_dt(datatracker, art_review["group"], log)
-
+        # person lookup and group lookup are independent — run in parallel
+        reviewer, group = await asyncio.gather(
+            fetch_dt_async(datatracker, reviewer_email["person"], log),
+            fetch_dt_async(datatracker, art_review["group"], log),
+        )
+        if not reviewer:
+            log.warning("Could not fetch reviewer for %s", doc.name)
+            continue
         if not group:
             log.warning("Could not fetch ART for %s", doc.name)
             continue
@@ -432,14 +464,18 @@ def thank_art_reviewer(
             continue
 
         if group["acronym"].lower() == thank_art.lower():
-            # remember we thanked for this
             thanked.add(reviewer["id"])
-
             review.preface(
                 "",
-                f'Thanks to {reviewer["name"] or reviewer["name_from_draft"]} '
-                + f'for the {group["name"]} review ({art_review["external_url"]}).',
+                f"Thanks to {reviewer['name'] or reviewer['name_from_draft']} "
+                + f"for the {group['name']} review ({art_review['external_url']}).",
             )
+
+
+def thank_art_reviewer(
+    doc: Doc, review: IetfReview, thank_art: str, datatracker: str
+) -> None:
+    run_async(_thank_art_reviewer_async(doc, review, thank_art, datatracker))
 
 
 def check_ips(doc: Doc, review: IetfReview, verbose: bool) -> None:
@@ -453,12 +489,10 @@ def check_ips(doc: Doc, review: IetfReview, verbose: bool) -> None:
     @return     None
     """
     result: list[
-        Union[
-            ipaddress.IPv4Address,
-            ipaddress.IPv6Address,
-            ipaddress.IPv4Network,
-            ipaddress.IPv6Network,
-        ]
+        ipaddress.IPv4Address
+        | ipaddress.IPv6Address
+        | ipaddress.IPv4Network
+        | ipaddress.IPv6Network
     ] = []
     faulty = []
     for ip_literal in extract_ips(doc.orig):
@@ -475,49 +509,23 @@ def check_ips(doc: Doc, review: IetfReview, verbose: bool) -> None:
 
     quote = "`" if review.mkd else '"'
     if faulty and verbose:
-        msg = "Unparsable possible IP "
-        if len(faulty) > 1:
-            msg += "blocks or addresses: "
-        else:
-            msg += "block or address: "
-        msg += word_join(faulty, prefix=quote, suffix=quote) + "."
-        review.nit("IP addresses", msg)
+        s = "s" if len(faulty) > 1 else ""
+        review.nit(
+            "IP addresses",
+            f"Unparsable possible IP block{s} or address{s}: "
+            f"{word_join(faulty, prefix=quote, suffix=quote)}.",
+        )
 
-    faulty = []
-    for ip_obj in result:
-        if isinstance(ip_obj, ipaddress.IPv4Address) and (
-            ip_obj in TEST_NET_1
-            or ip_obj in TEST_NET_2
-            or ip_obj in TEST_NET_3
-            or ip_obj in MCAST_TEST_NET
-        ):
-            continue
-
-        if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj in TEST_NET_V6:
-            continue
-
-        if isinstance(ip_obj, ipaddress.IPv4Network) and (
-            ip_obj.subnet_of(TEST_NET_1)
-            or ip_obj.subnet_of(TEST_NET_2)
-            or ip_obj.subnet_of(TEST_NET_3)
-            or ip_obj.subnet_of(MCAST_TEST_NET)
-        ):
-            continue
-
-        if isinstance(ip_obj, ipaddress.IPv6Network) and ip_obj.subnet_of(TEST_NET_V6):
-            continue
-
-        faulty.append(str(ip_obj))
+    faulty = [str(ip_obj) for ip_obj in result if not is_test_ip(ip_obj)]
 
     if faulty:
-        msg = "Found IP "
-        if len(faulty) > 1:
-            msg += "blocks or addresses"
-        else:
-            msg += "block or address"
-        msg += " not inside RFC5737/RFC3849 example ranges: "
-        msg += word_join(faulty, prefix=quote, suffix=quote) + "."
-        review.comment("IP addresses", msg)
+        s = "s" if len(faulty) > 1 else ""
+        review.comment(
+            "IP addresses",
+            f"Found IP block{s} or address{s} not inside "
+            "RFC5737/RFC3849 example ranges: "
+            f"{word_join(faulty, prefix=quote, suffix=quote)}.",
+        )
 
 
 def check_html_entities(doc: Doc, review: IetfReview) -> None:
@@ -550,7 +558,7 @@ def check_html_entities(doc: Doc, review: IetfReview) -> None:
                 "Stray characters",
                 "The text version of this document contains these HTML entities, "
                 "which might indicate issues with its XML source: "
-                f"{word_join(list(set(entities)), prefix=quote, suffix=quote)}",
+                f"{word_join(set(entities), prefix=quote, suffix=quote)}",
             )
 
 
@@ -589,25 +597,27 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     if result:
         review.nit_bullets("URLs", "Found non-HTTP URLs in the document:", result)
 
-    reachability = {u: fetch_url(u, log, verbose, "HEAD") for u in urls}
-    result = []
-    for url in urls:
-        if reachability[url] is None:
-            result.append(url)
-
+    reachability = fetch_parallel(
+        {u: lambda u=u: fetch_url_async(u, log, verbose, "HEAD") for u in urls}
+    )
+    result = [u for u in urls if reachability[u] is None]
     if result:
         review.nit_bullets(
             "URLs", "These URLs in the document did not return content:", result
         )
 
-    result = []
-    for url in urls:
-        if url.startswith("https:"):
-            continue
-        if reachability[url] is not None:
-            test_url = re.sub(r"^\w+:", r"https:", url)
-            if fetch_url(test_url, log, verbose, "HEAD") is not None:
-                result.append(url)
+    http_urls = {
+        u: re.sub(r"^\w+:", "https:", u)
+        for u in urls
+        if not u.startswith("https:") and reachability[u] is not None
+    }
+    https_reachability = fetch_parallel(
+        {
+            u: lambda tu=tu: fetch_url_async(tu, log, verbose, "HEAD")
+            for u, tu in http_urls.items()
+        }
+    )
+    result = [u for u in http_urls if https_reachability[u] is not None]
 
     if result:
         review.nit_bullets(
@@ -686,52 +696,39 @@ def check_json(doc: Doc, review: IetfReview) -> None:
 
     @return     None
     """
-    snippets = re.finditer(r"^(\s*){\s*$", doc.orig, flags=re.MULTILINE)
+    decoder = json.JSONDecoder()
+    # Use [ \t]* not \s* so the match never consumes the preceding newline,
+    # which would otherwise make snip.start() land on the blank line above {.
+    snippets = re.finditer(r"^[ \t]*{\s*$", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
-        # parse JSON snippet until closing brace
+        raw = undo_rfc8792(
+            doc.orig[snip.start():].replace("base64url({", "{").replace("})", "}")
+        )
+        # Skip if the character after { (ignoring whitespace) is not a quote
+        # or closing brace — non-JSON content like pseudocode or templates.
+        after_brace = raw.lstrip()[1:].lstrip()
+        if not after_brace or after_brace[0] not in ('"', '}'):
+            continue
         try:
-            tokens = list(json5.tokenizer.tokenize(doc.orig[snip.start() :]))
-        except json5.utils.JSON5DecodeError as err:
-            msg = f"{str(err)}\n"
-            index_match = re.search(r"index (\d+)", msg)
-            if index_match:
-                index = int(index_match.groups()[0]) + 1
-                msg += f"```{doc.orig[snip.start() : snip.start() + index]}\n```\n"
-            review.nit("JSON", msg, wrap=False)
-            return
-        stack = []
-        collected = []
-        for token in tokens:
-            collected.append(token.value)
-            if token.type in ["WHITESPACE"]:
+            decoder.raw_decode(raw)
+        except json.JSONDecodeError as err:
+            # lineno=1 colno=1 (pos=0) means the decoder hit a literal
+            # newline inside a string value (e.g. line-wrapped JWT tokens
+            # in RFC figures).  Python 3.14's json C extension reports this
+            # at position 0 rather than at the newline.  Skip — not our bug.
+            if err.lineno == 1 and err.colno == 1:
                 continue
-            if token.type in ["LBRACE", "LBRACKET"]:
-                stack.append(token)
-            elif token.type in ["RBRACE", "RBRACKET"]:
-                stack.pop()
-            if not stack:
-                break
-
-        text = "".join(collected)
-        # fix it up a bit
-        text = undo_rfc8792(text.replace("base64url({", "{").replace("})", "}"))
-        try:
-            json.loads(text)
-        except json.decoder.JSONDecodeError as err:
-            nit = ""
             quote = "> "
-            if review.mkd:
-                nit += "```\n"
-                quote = ""
-
-            for i, l in enumerate(text.splitlines(keepends=True)):
-                nit += f"{quote}{l}"
-                if i == err.lineno - 2:
+            nit = "```\n" if review.mkd else ""
+            lines = raw.splitlines(keepends=True)
+            for i, line in enumerate(lines):
+                nit += f"{quote}{line}"
+                # err.lineno is 1-based; place the caret on the error line.
+                if i == err.lineno - 1:
                     nit += f"{quote}{' ' * (err.colno - 1)}^ {err.msg}\n"
-
+                    break
             if review.mkd:
                 nit += "```\n"
-
             review.nit("JSON", nit, wrap=False)
 
 
@@ -791,32 +788,22 @@ def validate_gh_id(_ctx, _param, value):
     return value
 
 
-@click.command("review", help="Extract review from named items.")
+def _check_option(flag: str, param: str, help_text: str):
+    """Return a ``--check-FLAG/--no-check-FLAG`` option decorator."""
+    return click.option(
+        f"--check-{flag}/--no-check-{flag}",
+        param,
+        default=None,
+        help=f"{help_text}  [default: {{default_enable}}]",
+    )
+
+
+@click.command("review", cls=_ReviewCommand, help="Extract review from named items.")
 @click.argument("items", nargs=-1)
-@click.option(
-    "--check-ips/--no-check-ips",
-    "chk_ips",
-    default=None,
-    help="Check IP address ranges.",
-)
-@click.option(
-    "--check-urls/--no-check-urls",
-    "chk_urls",
-    default=None,
-    help="Check if URLs resolve.",
-)
-@click.option(
-    "--check-refs/--no-check-refs",
-    "chk_refs",
-    default=None,
-    help="Check references in the draft for issues.",
-)
-@click.option(
-    "--check-grammar/--no-check-grammar",
-    "chk_grammar",
-    default=None,
-    help="Check grammar in the draft for issues.",
-)
+@_check_option("ips", "chk_ips", "Check IP address ranges.")
+@_check_option("urls", "chk_urls", "Check if URLs resolve.")
+@_check_option("refs", "chk_refs", "Check references in the draft for issues.")
+@_check_option("grammar", "chk_grammar", "Check grammar in the draft for issues.")
 @click.option(
     "--grammar-skip-rules",
     "grammar_skip_rules",
@@ -824,36 +811,11 @@ def validate_gh_id(_ctx, _param, value):
     help="Don't flag these grammar rules (use LanguageTool rule names, "
     "separate with commas).",
 )
-@click.option(
-    "--check-meta/--no-check-meta",
-    "chk_meta",
-    default=None,
-    help="Check metadata of the draft for issues.",
-)
-@click.option(
-    "--check-inclusivity/--no-check-inclusivity",
-    "chk_inclusiv",
-    default=None,
-    help="Check text for inclusive language issues.",
-)
-@click.option(
-    "--check-boilerplate/--no-check-boilerplate",
-    "chk_boilerpl",
-    default=None,
-    help="Check boilerplate text for issues.",
-)
-@click.option(
-    "--check-misc/--no-check-misc",
-    "chk_misc",
-    default=None,
-    help="Check text for miscellaneous issues.",
-)
-@click.option(
-    "--check-tlp/--no-check-tlp",
-    "chk_tlp",
-    default=None,
-    help="Check boilerplate for TLP issues.",
-)
+@_check_option("meta", "chk_meta", "Check metadata of the draft for issues.")
+@_check_option("inclusivity", "chk_inclusiv", "Check text for inclusive language.")
+@_check_option("boilerplate", "chk_boilerpl", "Check boilerplate text for issues.")
+@_check_option("misc", "chk_misc", "Check text for miscellaneous issues.")
+@_check_option("tlp", "chk_tlp", "Check boilerplate for TLP issues.")
 @click.option(
     "--thank-art",
     "thank_art",
@@ -917,15 +879,30 @@ def review_items(
     @return     -
     """
 
-    chk_ips = state.default if chk_ips is None else chk_ips
-    chk_urls = state.default if chk_urls is None else chk_urls
-    chk_refs = state.default if chk_refs is None else chk_refs
-    chk_grammar = state.default if chk_grammar is None else chk_grammar
-    chk_meta = state.default if chk_meta is None else chk_meta
-    chk_inclusiv = state.default if chk_inclusiv is None else chk_inclusiv
-    chk_boilerpl = state.default if chk_boilerpl is None else chk_boilerpl
-    chk_misc = state.default if chk_misc is None else chk_misc
-    chk_tlp = state.default if chk_tlp is None else chk_tlp
+    (
+        chk_ips,
+        chk_urls,
+        chk_refs,
+        chk_grammar,
+        chk_meta,
+        chk_inclusiv,
+        chk_boilerpl,
+        chk_misc,
+        chk_tlp,
+    ) = (
+        v if v is not None else state.default
+        for v in (
+            chk_ips,
+            chk_urls,
+            chk_refs,
+            chk_grammar,
+            chk_meta,
+            chk_inclusiv,
+            chk_boilerpl,
+            chk_misc,
+            chk_tlp,
+        )
+    )
 
     if not items:
         items = ["/dev/stdin"]
@@ -950,6 +927,8 @@ def review_items(
 
         if chk_meta and doc.meta:
             check_meta(doc, review, state.datatracker, log)
+        elif chk_meta:
+            log.debug("Skipping check_meta: no metadata available for %s", doc.name)
 
         if chk_misc:
             check_html_entities(doc, review)
@@ -1003,7 +982,33 @@ def review_items(
                 wrap=False,
             )
 
-        print(review)
+        # Flush pending log output so it doesn't interleave with the review.
+        sys.stderr.flush()
+        sys.stdout.flush()
+
+        # FORCE_COLOR is an explicit user opt-in (not set automatically by terminals).
+        # NO_COLOR (https://no-color.org/) is the standard opt-out.
+        try:
+            in_terminal = sys.stdout.isatty()
+        except Exception:
+            in_terminal = False
+        if os.environ.get("FORCE_COLOR"):
+            in_terminal = True
+        if os.environ.get("NO_COLOR"):
+            in_terminal = False
+
+        if in_terminal and gen_mkd:
+            theme = "ansi_dark" if darkdetect.isDark() else "ansi_light"
+            Console(force_terminal=True).print(
+                Syntax(str(review), "markdown", theme=theme, word_wrap=True)
+            )
+        elif in_terminal:
+            text = Text()
+            for line in str(review).splitlines(keepends=True):
+                text.append(line, style=_plaintext_style(line.rstrip()))
+            Console(force_terminal=True).print(text, end="")
+        else:
+            print(review, flush=True)
 
 
 @click.command(

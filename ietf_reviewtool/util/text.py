@@ -2,15 +2,16 @@
 
 import ipaddress
 import logging
-import re
-import urllib.parse
 import os
-
+import re
 import textwrap
+import urllib.parse
+from collections.abc import Iterable
+
 import urlextract  # type: ignore
 
 from .docposition import SECTION_PATTERN
-from .utils import TEST_NET_1, TEST_NET_2, TEST_NET_3, MCAST_TEST_NET, TEST_NET_V6
+from .utils import is_test_ip
 
 extractor = urlextract.URLExtract(extract_localhost=False, limit=9999999)
 extractor.update_when_older(7)  # update TLDs when older than 7 days
@@ -40,7 +41,7 @@ def normalize_ws(string: str) -> str:
     return re.sub(r"\s+", r" ", string)
 
 
-def word_join(words: list, ox_comma=True, prefix="", suffix="") -> str:
+def word_join(words: Iterable, ox_comma=True, prefix="", suffix="") -> str:
     """
     Join list items using commas and "and", optionally each prefixed by something.
 
@@ -51,15 +52,16 @@ def word_join(words: list, ox_comma=True, prefix="", suffix="") -> str:
 
     @return     String of joined words
     """
-    if len(words) == 0:
+    words = list(words)
+    if not words:
         return ""
     if len(words) == 1:
         return f"{prefix}{words[0]}{suffix}"
     if len(words) == 2:
         return f"{prefix}{words[0]}{suffix} and {prefix}{words[1]}{suffix}"
     return (
-        f'{prefix}{f"{suffix}, {prefix}".join(words[:-1])}'
-        f'{suffix}{"," if ox_comma else ""} and {prefix}{words[-1]}{suffix}'
+        f"{prefix}{f'{suffix}, {prefix}'.join(words[:-1])}"
+        f"{suffix}{',' if ox_comma else ''} and {prefix}{words[-1]}{suffix}"
     )
 
 
@@ -162,8 +164,7 @@ def extract_urls(
     section_numbers = extract_section_numbers(text)
     urls: dict[str, set] = {}
     for part, part_text in doc_parts(text).items():
-        if part not in urls:
-            urls[part] = set()
+        urls.setdefault(part, set())
 
         # find all URLs in part
         part_text = unfold(part_text)
@@ -202,18 +203,7 @@ def extract_urls(
 
                 # remove URLs w/example IP addresses
                 try:
-                    addr = ipaddress.ip_address(netloc)
-                    if (
-                        isinstance(addr, ipaddress.IPv4Address)
-                        and (
-                            addr in TEST_NET_1
-                            or addr in TEST_NET_2
-                            or addr in TEST_NET_3
-                            or addr in MCAST_TEST_NET
-                        )
-                    ) or (
-                        isinstance(addr, ipaddress.IPv6Address) and addr in TEST_NET_V6
-                    ):
+                    if is_test_ip(ipaddress.ip_address(netloc)):
                         continue
                 except ValueError:
                     pass

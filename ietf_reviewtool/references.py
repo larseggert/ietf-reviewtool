@@ -1,14 +1,19 @@
 """ietf-reviewtool references module"""
 
+import asyncio
 import logging
-import os
 import re
 
 from .doc import Doc
 from .review import IetfReview
-from .util.fetch import fetch_meta, fetch_docs_in_last_call_text, fetch_dt
-from .util.text import untag, word_join, basename
-from .util.utils import duplicates, get_latest, die
+from .util.fetch import (
+    fetch_docs_in_last_call_text,
+    fetch_dt_async,
+    fetch_meta_async,
+    run_async,
+)
+from .util.text import basename, untag, word_join
+from .util.utils import REFERENCE_KINDS, change_dir, die, duplicates, get_latest
 
 STATUS_RANK = {
     "internet standard": 3,
@@ -22,6 +27,70 @@ STATUS_RANK = {
     "historic": 0,
     "unknown": 0,
 }
+
+
+def _parse_ref_doc(ref_doc: str) -> tuple[str, str | None] | None:
+    "Parse a ref_doc string into (docname, rev). Returns None if not an RFC or draft."
+    name = re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc) if ref_doc else None
+    if not name:
+        return None
+    draft = re.search(r"^(draft-.*)-(\d{2,})$", name.group(0))
+    if draft:
+        return draft.group(1), basename(draft.group(2))
+    return re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0)), None
+
+
+def _docname_from_ref(ref_doc: str) -> str | None:
+    result = _parse_ref_doc(ref_doc)
+    return result[0] if result else None
+
+
+async def _prefetch_all_async(
+    doc: Doc, datatracker: str, log: logging.Logger
+) -> tuple[dict, dict, dict, list]:
+    """Fire all ref metadata, obs, and downref requests in one gather."""
+    docnames: set[str] = set()
+    for kind in REFERENCE_KINDS:
+        for _tag, ref_docs in doc.references[kind]:
+            for ref_doc in ref_docs:
+                docname = _docname_from_ref(ref_doc)
+                if docname:
+                    docnames.add(docname)
+
+    obs_q = "doc/relateddocument/?relationship__slug=obs&target__name="
+    downrefs_q = "doc/relateddocument/?relationship=downref-approval&limit=0"
+
+    # Single gather: meta + obs + downrefs all at once
+    meta_keys = [("meta", n) for n in docnames]
+    obs_keys = [("obs", n) for n in docnames]
+    all_keys = meta_keys + obs_keys + [("downrefs", None)]
+    coros = (
+        [fetch_meta_async(datatracker, n, log) for n in docnames]
+        + [fetch_dt_async(datatracker, obs_q + n, log) for n in docnames]
+        + [fetch_dt_async(datatracker, downrefs_q, log)]
+    )
+    results = await asyncio.gather(*coros)
+    by_key = dict(zip(all_keys, results))
+
+    meta = {n: by_key[("meta", n)] for n in docnames}
+    obs = {n: by_key[("obs", n)] for n in docnames}
+    downrefs_raw = by_key[("downrefs", None)]
+    downrefs = [re.sub(r".*(rfc\d+).*", r"\1", d["target"]) for d in downrefs_raw]
+
+    # Source fetches depend on obs results — second gather
+    source_keys = [
+        (n, o["source"]) for n, obs_list in obs.items() if obs_list for o in obs_list
+    ]
+    obs_rfcs: dict[str, list] = {}
+    if source_keys:
+        src_results = await asyncio.gather(
+            *[fetch_dt_async(datatracker, src, log) for _, src in source_keys]
+        )
+        for (n, _src), result in zip(source_keys, src_results):
+            if result and "rfc" in result:
+                obs_rfcs.setdefault(n, []).append(result["rfc"])
+
+    return meta, obs, obs_rfcs, downrefs
 
 
 def check_refs(
@@ -40,19 +109,20 @@ def check_refs(
 
     @return     { description_of_the_return_value }
     """
-    downrefs_in_registry = fetch_downrefs(datatracker, log)
-    current_directory = os.getcwd()
-    if doc.path:
-        os.chdir(doc.path)
-    docs_in_lc = (
-        fetch_docs_in_last_call_text(
-            doc.meta["name"] + "-" + doc.meta["rev"] + ".txt", log
-        )
-        if doc.meta
-        else []
+    meta_cache, obs_cache, obs_rfcs_cache, downrefs_in_registry = run_async(
+        _prefetch_all_async(doc, datatracker, log)
     )
     if doc.path:
-        os.chdir(current_directory)
+        with change_dir(doc.path):
+            docs_in_lc = (
+                fetch_docs_in_last_call_text(
+                    doc.meta["name"] + "-" + doc.meta["rev"] + ".txt", log
+                )
+                if doc.meta
+                else []
+            )
+    else:
+        docs_in_lc = []
 
     # remove self-mentions from extracted references in the text
     doc.references["text"] = [
@@ -62,7 +132,7 @@ def check_refs(
     quote = "`" if review.mkd else ""
 
     # check for duplicates
-    for kind in ["normative", "informative"]:
+    for kind in REFERENCE_KINDS:
         if not doc.references[kind]:
             continue
 
@@ -73,18 +143,16 @@ def check_refs(
             review.nit(
                 "Duplicate references",
                 f"Duplicate {kind} references: "
-                f"{word_join(list(dupes), prefix=quote, suffix=quote)}.",
+                f"{word_join(dupes, prefix=quote, suffix=quote)}.",
             )
 
-        dupes = duplicates(tgts)
-        if None in dupes:
-            dupes.remove(None)
+        dupes = {d for d in duplicates(tgts) if d is not None}
         if dupes:
             tags = [t[0] for t in doc.references[kind] if t[1] in dupes]
             review.nit(
                 "Duplicate references",
                 f"Duplicate {kind} references to: "
-                f"{word_join(list(dupes), prefix=quote, suffix=quote)}.",
+                f"{word_join(dupes, prefix=quote, suffix=quote)}.",
             )
 
     norm = set(e[0] for e in doc.references["normative"])
@@ -97,11 +165,11 @@ def check_refs(
             "Duplicate references",
             "Reference entries duplicated in both normative and "
             f"informative sections: "
-            f"{word_join(list(norm & info), prefix=quote, suffix=quote)}.",
+            f"{word_join(norm & info, prefix=quote, suffix=quote)}.",
         )
 
     if in_text - both:
-        ref_list = word_join(list(in_text - both), prefix=quote, suffix=quote)
+        ref_list = word_join(in_text - both, prefix=quote, suffix=quote)
         review.comment(
             "Missing references",
             (
@@ -111,22 +179,17 @@ def check_refs(
         )
 
     if both - in_text:
-        ref_list = word_join(list(both - in_text), prefix=quote, suffix=quote)
+        ref_list = word_join(both - in_text, prefix=quote, suffix=quote)
         review.nit("Uncited references", f"Uncited references: {ref_list}.")
+
+    def ref_in(ref: str, refs: list) -> bool:
+        return any(
+            re.search(ref, name) for _, ref_docs in refs for name in (ref_docs or [])
+        )
 
     for rel, rel_docs in doc.relationships.items():
         for rel_doc in rel_docs:
             ref = f"rfc{rel_doc}"
-
-            def ref_in(ref, refs) -> bool:
-                return (
-                    filter(
-                        lambda x: re.search(ref, x),
-                        [x[1] for x in refs],
-                    )
-                    is not None
-                )
-
             in_normative = ref_in(ref, doc.references["normative"])
             in_informative = ref_in(ref, doc.references["informative"])
 
@@ -142,21 +205,17 @@ def check_refs(
         # if we have no level from the metadata, see if the document has one
         level = doc.status if doc.status else "unknown"
 
-    for kind in ["normative", "informative"]:
+    for kind in REFERENCE_KINDS:
         for tag, ref_docs in doc.references[kind]:
             for ref_doc in ref_docs:
-                name = (
-                    re.search(r"^(rfc\d+|draft-[-a-z\d_.]+)", ref_doc)
-                    if ref_doc
-                    else None
-                )
-                if not name:
+                parsed = _parse_ref_doc(ref_doc)
+                if not parsed:
                     log.debug(
                         "No metadata available for %s reference %s",
                         kind,
                         tag,
                     )
-                    if kind == "normative" and doc.status.lower() not in [
+                    if kind == "normative" and doc.status_lower not in [
                         "informational",
                         "experimental",
                     ]:
@@ -168,14 +227,8 @@ def check_refs(
                         )
                     continue
 
-                draft_components = re.search(r"^(draft-.*)-(\d{2,})$", name.group(0))
-                rev = None
-                if draft_components:
-                    docname = draft_components.group(1)
-                    rev = basename(draft_components.group(2))
-                else:
-                    docname = re.sub(r"rfc0*(\d+)", r"rfc\1", name.group(0))
-                ref_meta = fetch_meta(datatracker, docname, log)
+                docname, rev = parsed
+                ref_meta = meta_cache.get(docname)
                 display_name = re.sub(r"rfc", r"RFC", docname)
 
                 latest = ref_meta and get_latest(ref_meta["rev_history"], "published")
@@ -195,7 +248,7 @@ def check_refs(
                             f"available revision.",
                         )
 
-                if ref_meta and doc.status.lower() not in [
+                if ref_meta and doc.status_lower not in [
                     "informational",
                     "experimental",
                 ]:
@@ -232,27 +285,17 @@ def check_refs(
                             )
                             review.comment("DOWNREFs", msg)
 
-                obsoleted_by = fetch_dt(
-                    datatracker,
-                    "doc/relateddocument/?relationship__slug=obs&target__name="
-                    + docname,
-                    log,
-                )
-                if obsoleted_by:
-                    ob_bys = []
-                    for obs in obsoleted_by:
-                        obs_by = fetch_dt(datatracker, obs["source"], log)
-                        if "rfc" in obs_by:
-                            ob_bys.append(obs_by["rfc"])
-
-                    ob_rfcs = word_join(ob_bys, prefix=f"{quote}RFC", suffix=quote)
-                    review.nit(
-                        "Outdated references",
-                        f"Reference {quote}{tag}{quote} to "
-                        f"{quote}{display_name}{quote}, "
-                        f"which was obsoleted by {ob_rfcs} "
-                        "(this may be on purpose).",
-                    )
+                if obs_cache.get(docname):
+                    ob_bys = obs_rfcs_cache.get(docname, [])
+                    if ob_bys:
+                        ob_rfcs = word_join(ob_bys, prefix=f"{quote}RFC", suffix=quote)
+                        review.nit(
+                            "Outdated references",
+                            f"Reference {quote}{tag}{quote} to "
+                            f"{quote}{display_name}{quote}, "
+                            f"which was obsoleted by {ob_rfcs} "
+                            "(this may be on purpose).",
+                        )
 
 
 def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bool:
@@ -282,16 +325,11 @@ def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bo
 
 
 def fetch_downrefs(datatracker: str, log: logging.Logger) -> list[str]:
-    """
-    Fetches DOWNREFs from datatracker and returns them as a list.
-
-    @param      datatracker  The datatracker URL to use
-
-    @return     A list of RFC names.
-    """
-    downrefs = fetch_dt(
-        datatracker,
-        "doc/relateddocument/?relationship=downref-approval&limit=0",
-        log,
+    downrefs = run_async(
+        fetch_dt_async(
+            datatracker,
+            "doc/relateddocument/?relationship=downref-approval&limit=0",
+            log,
+        )
     )
     return [re.sub(r".*(rfc\d+).*", r"\1", d["target"]) for d in downrefs]
