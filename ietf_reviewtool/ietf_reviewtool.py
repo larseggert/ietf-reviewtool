@@ -237,8 +237,14 @@ def cli(
         format="%(message)s",
     )
     for noisy in (
-        "httpx", "httpcore", "hishel", "hpack", "h2",
-        "language_tool_python", "urllib3", "markdown_it",
+        "httpx",
+        "httpcore",
+        "hishel",
+        "hpack",
+        "h2",
+        "language_tool_python",
+        "urllib3",
+        "markdown_it",
     ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     datatracker = re.sub(r"/+$", "", datatracker)
@@ -702,12 +708,12 @@ def check_json(doc: Doc, review: IetfReview) -> None:
     snippets = re.finditer(r"^[ \t]*{\s*$", doc.orig, flags=re.MULTILINE)
     for snip in snippets:
         raw = undo_rfc8792(
-            doc.orig[snip.start():].replace("base64url({", "{").replace("})", "}")
+            doc.orig[snip.start() :].replace("base64url({", "{").replace("})", "}")
         )
         # Skip if the character after { (ignoring whitespace) is not a quote
         # or closing brace — non-JSON content like pseudocode or templates.
         after_brace = raw.lstrip()[1:].lstrip()
-        if not after_brace or after_brace[0] not in ('"', '}'):
+        if not after_brace or after_brace[0] not in ('"', "}"):
             continue
         try:
             decoder.raw_decode(raw)
