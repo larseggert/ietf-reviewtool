@@ -2,18 +2,65 @@
 
 import math
 import re
-import requests_cache
 
 import language_tool_python
 
 from .review import IetfReview
 from .util.docposition import DocPosition
 from .util.text import unfold, wrap_para
-from .util.fetch import fetch_init_cache
 
 # Target chunk size for LanguageTool to avoid server heap space errors.
 # Chunks may exceed this if no paragraph break is found.
 TARGET_CHUNK_SIZE = 40000
+
+_SKIP_RULES = {
+    "ADVERTISEMENT_OF_FOR",
+    "ALL_OF_THE",
+    "ARROWS",
+    "BOTH_AS_WELL_AS",
+    "COMMA_COMPOUND_SENTENCE",
+    "COMMA_COMPOUND_SENTENCE_2",
+    "COMMA_PARENTHESIS_WHITESPACE",
+    "CONSECUTIVE_SPACES",
+    "COPYRIGHT",
+    "CURRENCY",
+    "DASH_RULE",
+    "DATE_FUTURE_VERB_PAST",
+    "DATE_NEW_YEAR",
+    "DIFFERENT_THAN",
+    "DOUBLE_PUNCTUATION",
+    "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
+    "EN_COMPOUNDS",
+    "EN_QUOTES",
+    "EN_UNPAIRED_BRACKETS",
+    "HYPHEN_TO_EN",
+    "HYPOTHESIS_TYPOGRAPHY",
+    "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
+    "IN_THE_INTERNET",
+    "I_LOWERCASE",
+    "KEY_WORDS",
+    "LARGE_NUMBER_OF",
+    "MORFOLOGIK_RULE_EN_US",
+    "MULTIPLICATION_SIGN",
+    "NUMBERS_IN_WORDS",
+    "OUTSIDE_OF",
+    "PLUS_MINUS",
+    "POSSESSIVE_APOSTROPHE",
+    "PUNCTUATION_PARAGRAPH_END",
+    "RETURN_IN_THE",
+    "R_SYMBOL",
+    "SENTENCE_WHITESPACE",
+    "SOME_OF_THE",
+    "SO_AS_TO",
+    "TRADEMARK",
+    "UNIT_SPACE",
+    "UNLIKELY_OPENING_PUNCTUATION",
+    "UPPERCASE_SENTENCE_START",
+    "WHETHER",
+    "WHITESPACE_RULE",
+    "WITH_THE_EXCEPTION_OF",
+    "WORD_CONTAINS_UNDERSCORE",
+}
 
 
 def _check_text_chunked(lt: language_tool_python.LanguageTool, full_text: str) -> list:
@@ -77,66 +124,17 @@ def check_grammar(
 
     @return     { description_of_the_return_value }
     """
-    # the languagetool auto-download seems to fail if the cache is enabled
-    requests_cache.uninstall_cache()
     lt = language_tool_python.LanguageTool("en-US")
-    fetch_init_cache()
 
     full_text = unfold("".join(text))
+    extra_skip = set(grammar_skip_rules.split(",")) if grammar_skip_rules else set()
     issues = [
         i
         for i in _check_text_chunked(lt, full_text)
-        if i.rule_id
-        not in [
-            "HYPHEN_TO_EN",
-            "ADVERTISEMENT_OF_FOR",
-            "ALL_OF_THE",
-            "ARROWS",
-            "BOTH_AS_WELL_AS",
-            "COMMA_COMPOUND_SENTENCE",
-            "COMMA_COMPOUND_SENTENCE_2",
-            "COMMA_PARENTHESIS_WHITESPACE",
-            "COPYRIGHT",
-            "CURRENCY",
-            "DASH_RULE",
-            "DATE_FUTURE_VERB_PAST",
-            "DATE_NEW_YEAR",
-            "DIFFERENT_THAN",
-            "DOUBLE_PUNCTUATION",
-            "EN_COMPOUNDS",
-            "EN_QUOTES",
-            "EN_UNPAIRED_BRACKETS",
-            "ENGLISH_WORD_REPEAT_BEGINNING_RULE",
-            "HYPOTHESIS_TYPOGRAPHY",
-            "I_LOWERCASE",
-            "IN_THE_INTERNET",
-            "INCORRECT_POSSESSIVE_FORM_AFTER_A_NUMBER",
-            "KEY_WORDS",
-            "LARGE_NUMBER_OF",
-            "MORFOLOGIK_RULE_EN_US",
-            "MULTIPLICATION_SIGN",
-            "NUMBERS_IN_WORDS",
-            "OUTSIDE_OF",
-            "PLUS_MINUS",
-            "POSSESSIVE_APOSTROPHE",
-            "PUNCTUATION_PARAGRAPH_END",
-            "R_SYMBOL",
-            "RETURN_IN_THE",
-            "SENTENCE_WHITESPACE",
-            "SO_AS_TO",
-            "SOME_OF_THE",
-            "TRADEMARK",
-            "UNIT_SPACE",
-            "UNLIKELY_OPENING_PUNCTUATION",
-            "UPPERCASE_SENTENCE_START",
-            "WHETHER",
-            "WHITESPACE_RULE",
-            "WITH_THE_EXCEPTION_OF",
-            "WORD_CONTAINS_UNDERSCORE",
-        ]
-        and (not grammar_skip_rules or i.rule_id not in grammar_skip_rules.split(","))
+        if i.rule_id not in _SKIP_RULES
+        and not i.rule_id.startswith("EN_REPEATEDWORDS_")
+        and i.rule_id not in extra_skip
     ]
-    issues = [i for i in issues if not i.rule_id.startswith("EN_REPEATEDWORDS_")]
 
     doc_pos = DocPosition()
     cur = 0

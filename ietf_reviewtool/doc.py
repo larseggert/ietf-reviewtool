@@ -6,9 +6,9 @@ import re
 import tempfile
 
 from .util.docposition import SECTION_PATTERN
-from .util.fetch import get_items, fetch_meta
-from .util.text import basename, revision, unfold, untag, extract_urls, doc_parts
-from .util.utils import read
+from .util.fetch import fetch_meta, get_items
+from .util.text import basename, doc_parts, extract_urls, revision, unfold, untag
+from .util.utils import REFERENCE_KINDS, change_dir, read
 
 
 class Doc:
@@ -16,6 +16,12 @@ class Doc:
 
     name: str
     status: str
+
+    @property
+    def status_lower(self) -> str:
+        "Lowercased status, kept in sync with status mutations."
+        return self.status.lower()
+
     orig: str
     orig_lines: list[str]
     current: str
@@ -31,15 +37,13 @@ class Doc:
         self.revision = revision(item)
         self.path = os.path.dirname(item)
         with tempfile.TemporaryDirectory() as tmp:
-            current_directory = os.getcwd()
             log.debug("tmp dir %s", tmp)
             self.orig = ""
             if item != "/dev/stdin":
-                os.chdir(tmp)
-                orig_item = os.path.basename(item)
-                get_items([orig_item], log, datatracker)
-                self.orig = read(orig_item, log)
-                os.chdir(current_directory)
+                with change_dir(tmp):
+                    orig_item = os.path.basename(item)
+                    get_items([orig_item], log, datatracker)
+                    self.orig = read(orig_item, log)
             self.current = read(item, log)
             if not self.orig:
                 # check if there is a ".orig" file to diff against
@@ -82,7 +86,7 @@ class Doc:
                 re.MULTILINE,
             )
             if match:
-                tmp = "".join([group for group in match.groups() if group])
+                tmp = "".join(filter(None, match.groups()))
                 tmp = re.sub("rfc", "", tmp, flags=re.IGNORECASE)
                 tmp = re.sub(r"[,\s]+(\w)", r",\1", tmp)
                 self.relationships[rel] = [r for r in tmp.strip().split(",") if r]
@@ -118,7 +122,7 @@ class Doc:
             refs[part] = list({f"[{untag(ref)}]" for ref in refs[part]})
 
         self.references = {}
-        for part in ["informative", "normative"]:
+        for part in REFERENCE_KINDS:
             self.references[part] = []
             for ref in refs[part]:
                 ref_match = re.search(
@@ -144,7 +148,7 @@ class Doc:
 
                     if not targets:
                         urls = extract_urls(ref_text, log, True, True)
-                        targets = set().union(*[urls for _, urls in urls.items()])
+                        targets = {u for url_set in urls.values() for u in url_set}
                     self.references[part].append((ref, targets))
         self.references["text"] = set(
             x.upper() if x.startswith("[rfc") else x for x in refs["text"]

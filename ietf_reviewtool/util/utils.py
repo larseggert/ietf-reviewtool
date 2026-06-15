@@ -4,6 +4,9 @@ import datetime
 import ipaddress
 import logging
 import sys
+from collections import Counter
+from contextlib import chdir as change_dir  # noqa: F401 — re-exported for callers
+from typing import Any, cast
 
 import charset_normalizer
 
@@ -12,6 +15,29 @@ TEST_NET_2 = ipaddress.IPv4Network("198.51.100.0/24")
 TEST_NET_3 = ipaddress.IPv4Network("203.0.113.0/24")
 MCAST_TEST_NET = ipaddress.IPv4Network("233.252.0.0/24")
 TEST_NET_V6 = ipaddress.IPv6Network("2001:db8::/32")
+
+_IPV4_TEST_NETS = (TEST_NET_1, TEST_NET_2, TEST_NET_3, MCAST_TEST_NET)
+_IPV6_TEST_NETS = (TEST_NET_V6,)
+
+REFERENCE_KINDS = ("normative", "informative")
+
+
+def is_test_ip(
+    ip_obj: ipaddress.IPv4Address
+    | ipaddress.IPv6Address
+    | ipaddress.IPv4Network
+    | ipaddress.IPv6Network,
+) -> bool:
+    "Return True if ip_obj falls within the RFC 5737/3849 documentation ranges."
+    if isinstance(ip_obj, ipaddress.IPv4Address):
+        return any(ip_obj in net for net in _IPV4_TEST_NETS)
+    if isinstance(ip_obj, ipaddress.IPv6Address):
+        return any(ip_obj in net for net in _IPV6_TEST_NETS)
+    if isinstance(ip_obj, ipaddress.IPv4Network):
+        return any(ip_obj.subnet_of(net) for net in _IPV4_TEST_NETS)
+    if isinstance(ip_obj, ipaddress.IPv6Network):
+        return any(ip_obj.subnet_of(net) for net in _IPV6_TEST_NETS)
+    return False
 
 
 def die(msg: str, log: logging.Logger, err: int = 1) -> None:
@@ -59,23 +85,8 @@ def write(text: str, file_name: str) -> None:
 
 
 def duplicates(data: list) -> set:
-    """
-    Return duplicate elements in a list.
-
-    @param      data  The list to locate duplicates in
-
-    @return     Duplicate elements of data.
-    """
-    seen = {}
-    dupes = set()
-    for item in data:
-        if item not in seen:
-            seen[item] = 1
-        else:
-            if seen[item] == 1:
-                dupes.add(item)
-            seen[item] += 1
-    return dupes
+    "Return duplicate elements in a list."
+    return {item for item, count in Counter(data).items() if count > 1}
 
 
 def get_latest(data: list, key: str) -> dict:
@@ -91,4 +102,4 @@ def get_latest(data: list, key: str) -> dict:
         key=lambda k: datetime.datetime.fromisoformat(k[key]),
         reverse=True,
     )
-    return data[0]
+    return cast(dict[Any, Any], data[0])

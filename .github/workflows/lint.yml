@@ -9,23 +9,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
-    - run: pipx install poetry black flake8 pylint
-    - uses: actions/setup-python@v6
-      with:
-        python-version: ">=3.11"
-        cache: poetry
-    - run: poetry install
+    - uses: astral-sh/setup-uv@v6
+    - run: uv sync --group dev --group types
     - name: Prepare artifacts directory
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         mkdir -p ./linter_output
-        echo ${{ github.event.number }} > ./linter_output/pr_number
-        echo ${{ github.event.pull_request.head.sha }} > ./linter_output/head_sha
-    - name: Lint with black
-      run: black . --check 2>&1 >/dev/null | tee ./linter_output/black.out
-    - name: Lint with flake8
-      run: flake8 | tee ./linter_output/flake8.out
+        echo "$PR_NUMBER" > ./linter_output/pr_number
+        echo "$HEAD_SHA" > ./linter_output/head_sha
     - name: Lint with pylint
-      run: pylint ietf_reviewtool tests --output-format=json | tee ./linter_output/pylint.out
+      run: uv run pylint ietf_reviewtool tests --output-format=json | tee ./linter_output/pylint.out
+    - name: Check with ruff
+      run: uv run ruff check ietf_reviewtool tests
+    - name: Format check with ruff
+      run: uv run ruff format --check ietf_reviewtool tests
+    - name: Type check with mypy
+      run: uv run mypy ietf_reviewtool
 
     - uses: actions/upload-artifact@v7
       with:
