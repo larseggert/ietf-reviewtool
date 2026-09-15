@@ -238,7 +238,7 @@ def check_refs(
                             "Outdated references",
                             f"Document references {quote}{display_name}{quote}, but "
                             f"that has been published as {quote}{latest['rev'].upper()}"
-                            "{quote}.",
+                            f"{quote}.",
                         )
                     else:
                         review.nit(
