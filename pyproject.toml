@@ -1,10 +1,10 @@
 [project]
 name = "ietf-reviewtool"
-version = "0.6.0"
+version = "0.6.1"
 description = "Review tool for IETF documents"
 authors = [{name = "Lars Eggert", email = "lars@eggert.org"}]
 readme = "README.md"
-license = {text = "GPL-2.0-only"}
+license = "GPL-2.0-only"
 requires-python = ">=3.11"
 dependencies = [
     "platformdirs>=4.0.0",
