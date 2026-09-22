@@ -315,8 +315,8 @@ def is_downref(level: str, kind: str, ref_level: str, log: logging.Logger) -> bo
 
     if kind == "normative":
         if level == "best current practice":
-            return STATUS_RANK[level] < STATUS_RANK["proposed standard"]
-        return STATUS_RANK[level] > STATUS_RANK[ref_level]
+            return STATUS_RANK.get(level, 0) < STATUS_RANK["proposed standard"]
+        return STATUS_RANK.get(level, 0) > STATUS_RANK.get(ref_level, 0)
 
     if kind == "informative":
         return False

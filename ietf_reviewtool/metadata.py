@@ -43,7 +43,7 @@ def check_meta(
                 f'document says "{doc.status}".',
             )
             # continue checking with the "higher" of the two statuses
-            if STATUS_RANK[level.lower()] > STATUS_RANK[doc.status_lower]:
+            if STATUS_RANK.get(level.lower(), 0) > STATUS_RANK.get(doc.status_lower, 0):
                 doc.status = level
                 log.info(f"Conflicting status info; checking as {doc.status}")
 
