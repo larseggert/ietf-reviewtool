@@ -27,6 +27,8 @@ class DocPosition:
         self.para_num = para_num
         self.sec_title = sec_title
         self.had_non_numbered_sec = had_non_numbered_sec
+        # whether the next non-blank line starts a new paragraph
+        self.block_start = True
 
     def fmt_section_and_paragraph(self, level: str = "") -> str:
         """
@@ -38,8 +40,11 @@ class DocPosition:
 
         @return     A formatted prefix line.
         """
-        line = f"{self.sec_title}, p" if self.sec_title else "P"
-        line += f"aragraph {self.para_num}"
+        if self.para_num == 0:
+            line = self.sec_title or "Front matter"
+        else:
+            line = f"{self.sec_title}, p" if self.sec_title else "P"
+            line += f"aragraph {self.para_num}"
         if level:
             line += f", {level}"
         return line + "\n"
@@ -57,10 +62,14 @@ class DocPosition:
 
         @return     An updated (paragraph number, section name) list.
         """
+        # only lines from the original document count
+        if is_diff and cur[0] not in " -":
+            return
+
         # track paragraphs
         pat = {True: r"^[\- ] +$", False: r"^\s*$"}
         if re.search(pat[is_diff], cur):
-            self.para_num += 1
+            self.block_start = True
             return
 
         # track sections
@@ -71,12 +80,22 @@ class DocPosition:
             if re.match(r"\d", pot_sec_title):
                 if self.had_non_numbered_sec:
                     self.para_num = 0
+                    self.block_start = True
                     self.sec_title = (
                         "Section " + re.sub(r"(.*)\.$", r"\1", pot_sec_title)
                         if re.match(r"\d", pot_sec_title)
                         else f'"{pot_sec_title}"'
                     )
+                    return
             else:
                 self.para_num = 0
+                self.block_start = True
                 self.had_non_numbered_sec = True
                 self.sec_title = f'"{pot_sec_title}"'
+                return
+
+        # count a paragraph at its first line, so that text added after the blank
+        # line ending a paragraph is attributed to that paragraph
+        if self.block_start:
+            self.block_start = False
+            self.para_num += 1
