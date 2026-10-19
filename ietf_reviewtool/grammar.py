@@ -6,7 +6,7 @@ import re
 import language_tool_python
 
 from .review import IetfReview
-from .util.docposition import DocPosition
+from .util.docposition import DocPosition, body_indent
 from .util.text import unfold, wrap_para
 
 # Target chunk size for LanguageTool to avoid server heap space errors.
@@ -136,7 +136,7 @@ def check_grammar(
         and i.rule_id not in extra_skip
     ]
 
-    doc_pos = DocPosition()
+    doc_pos = DocPosition(base_indent=body_indent(text))
     cur = 0
     pos = 0
     for issue in issues:

@@ -6,7 +6,7 @@ import re
 import textwrap
 
 from .doc import Doc
-from .util.docposition import DocPosition
+from .util.docposition import DocPosition, body_indent
 from .util.format import fmt_comment, fmt_nit
 from .util.text import wrap_para
 
@@ -309,7 +309,7 @@ class IetfReview:
         """
         changed: dict[str, list[str]] = {"+": [], "-": []}
         indicator: dict[str, list[str]] = {"+": [], "-": []}
-        doc_pos = DocPosition()
+        doc_pos = DocPosition(base_indent=body_indent(self.doc.orig_lines))
         prev = None
         heading_level = 4 if self.mkd else 0
 
@@ -373,7 +373,7 @@ class IetfReview:
         @param      diff    A diff with nits removed (by strip_nits_from_diff)
         @param      review  IETF Review object.
         """
-        doc_pos = DocPosition()
+        doc_pos = DocPosition(base_indent=body_indent(self.doc.orig_lines))
         item: dict = {}
         heading_level = 3 if self.mkd else 0
 
