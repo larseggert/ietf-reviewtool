@@ -32,7 +32,13 @@ def strip_nits_from_diff(diff: list) -> list:
 
         kind = cur[0]
 
-        if cur in _EMPTY_DIFF_LINES:
+        if cur == "+ \n":
+            prev = kind
+            continue
+
+        if cur == "- \n":
+            # keep deleted blank lines of the original, they separate paragraphs
+            result.append("  \n")
             prev = kind
             continue
 
@@ -317,6 +323,7 @@ class IetfReview:
             if cur in _EMPTY_DIFF_LINES:
                 prev = kind
                 if nxt:
+                    doc_pos.update(nxt, cur)
                     continue
 
             if kind in ["+", "-"] and nxt_kind == "?":
