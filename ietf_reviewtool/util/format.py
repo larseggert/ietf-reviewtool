@@ -87,7 +87,5 @@ def fmt_comment(item: dict, doc_pos: DocPosition, mkd_heading_level: int) -> str
     txt = "".join([re.sub(r". (.*)", r"\1", x) for x in item["txt"]])
 
     result.append(txt)
-    if item["ctx"]:
-        doc_pos.para_num -= 1  # don't count the comment paragraph
     item.clear()
     return "".join(result)
