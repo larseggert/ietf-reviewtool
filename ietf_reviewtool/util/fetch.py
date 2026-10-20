@@ -71,6 +71,8 @@ _HEADERS = {
 }
 _LIMITS = httpx.Limits(max_connections=64, max_keepalive_connections=32)
 _TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
+# HEAD only checks reachability; give up quickly and fall back to a Range GET.
+_HEAD_TIMEOUT = httpx.Timeout(connect=10.0, read=10.0, write=10.0, pool=5.0)
 
 _client: httpx.AsyncClient | None = None
 _cached_client: httpx.AsyncClient | None = None
@@ -145,7 +147,12 @@ async def fetch_url_async(
     log.debug("%s %scache %s", method.lower(), "" if use_cache else "no", url)
     while True:
         try:
-            response = await client.request(method, url, headers=extra_headers or None)
+            response = await client.request(
+                method,
+                url,
+                headers=extra_headers or None,
+                timeout=_HEAD_TIMEOUT if method == "HEAD" else _TIMEOUT,
+            )
             if method == "HEAD" and response.status_code == 403 and response.history:
                 log.debug(
                     "%s -> redirect to %s -> 403 (treating as valid)",
@@ -154,16 +161,18 @@ async def fetch_url_async(
                 )
                 return ""
             response.raise_for_status()
-        except httpx.HTTPStatusError as err:
-            log.debug("%s -> %s", url, err)
-            if method == "HEAD":
+        except (httpx.HTTPStatusError, httpx.RequestError) as err:
+            log.debug("%s -> %r", url, err)
+            # Some servers reject or never answer HEAD (e.g., hang until a
+            # CDN gives up), but serve GET fine. Retry those with a small
+            # Range GET; connection failures won't be helped by that.
+            if method == "HEAD" and not isinstance(
+                err, (httpx.ConnectError, httpx.ConnectTimeout)
+            ):
                 log.debug("Retrying %s with Range-header GET", url)
                 extra_headers["Range"] = "bytes=0-100"
                 method = "GET"
                 continue
-            return None
-        except httpx.RequestError as err:
-            log.debug("%s -> %s", url, err)
             return None
         return response.text if method != "HEAD" else ""
 
