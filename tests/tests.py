@@ -26,8 +26,8 @@ import unittest
 import httpx
 
 import ietf_reviewtool.ietf_reviewtool as irt
-from ietf_reviewtool.util import fetch
 from ietf_reviewtool.review import IetfReview
+from ietf_reviewtool.util import fetch
 
 
 def munge(text: str, repl=r"word") -> str:
