@@ -107,6 +107,26 @@ def _check_text_chunked(lt: language_tool_python.LanguageTool, full_text: str) -
     return issues
 
 
+def line_starts(lines: list[str], unfolded: str) -> list[int]:
+    """
+    Return where each line starts in the unfolded text of the lines.
+
+    @param      lines     The lines of text
+    @param      unfolded  The result of unfold() on the joined lines
+
+    @return     The offset of each line in the unfolded text. A line whose text cannot
+                be found (e.g., a blank one) gets the offset of the preceding line.
+    """
+    starts = []
+    pos = 0
+    for line in lines:
+        found = unfolded.find(line.strip(), pos) if line.strip() else -1
+        if found >= 0:
+            pos = found
+        starts.append(pos)
+    return starts
+
+
 def check_grammar(
     text: list,
     grammar_skip_rules: str,
@@ -127,6 +147,8 @@ def check_grammar(
     lt = language_tool_python.LanguageTool("en-US")
 
     full_text = unfold("".join(text))
+    # issue offsets are into the unfolded text
+    starts = line_starts(text, full_text)
     extra_skip = set(grammar_skip_rules.split(",")) if grammar_skip_rules else set()
     issues = [
         i
@@ -138,11 +160,10 @@ def check_grammar(
 
     doc_pos = DocPosition()
     cur = 0
-    pos = 0
     for issue in issues:
-        while pos + len(text[cur]) <= issue.offset:
+        # process all lines up to and including the one containing the issue
+        while cur < len(text) - 1 and starts[cur] <= issue.offset:
             doc_pos.update(text[cur + 1], text[cur], is_diff=False)
-            pos += len(text[cur])
             cur += 1
 
         nit = doc_pos.fmt_section_and_paragraph()
