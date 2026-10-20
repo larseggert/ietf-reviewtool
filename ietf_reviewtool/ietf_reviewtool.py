@@ -969,7 +969,7 @@ def review_items(
 
         if chk_grammar:
             check_grammar(
-                doc.current_lines, grammar_skip_rules, review, state.width, verbose
+                doc.orig_lines, grammar_skip_rules, review, state.width, verbose
             )
 
         if gen_mkd:
