@@ -46,6 +46,15 @@ class TestExtractUrls(unittest.TestCase):
         text = "1.  Introduction\n\n   See https://openid.net/specs/core.html.\n"
         self.assertEqual(all_urls(text), {"https://openid.net/specs/core.html"})
 
+    def test_non_http_url_kept_next_to_section_reference(self):
+        """A non-HTTP URL is still found when a section reference is skipped."""
+        text = (
+            "1.  Introduction\n"
+            "\n"
+            "   See Section 3.1.3.7 and ftp://ftp.rfc-editor.org/in-notes/x.txt.\n"
+        )
+        self.assertEqual(all_urls(text), {"ftp://ftp.rfc-editor.org/in-notes/x.txt"})
+
 
 if __name__ == "__main__":
     unittest.main()
