@@ -19,11 +19,15 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 SPDX-License-Identifier: GPL-2.0
 """
 
+import logging
 import re
 import unittest
 
+import httpx
+
 import ietf_reviewtool.ietf_reviewtool as irt
 from ietf_reviewtool.review import IetfReview
+from ietf_reviewtool.util import fetch
 
 
 def munge(text: str, repl=r"word") -> str:
@@ -242,6 +246,55 @@ class TestReviewItem(unittest.TestCase):
 
             with self.subTest(pos=pos):
                 self.compute_and_verify_result(self.two_lines, review, exp)
+
+
+class TestFetchUrl(unittest.TestCase):
+    """
+    Tests for fetch_url().
+    """
+
+    def setUp(self):
+        self.requests = []
+        self.saved_client = fetch._client
+
+    def tearDown(self):
+        fetch._client = self.saved_client
+
+    def use_handler(self, handler):
+        """Install a mock transport that records requests."""
+
+        def record(request):
+            self.requests.append(request)
+            return handler(request)
+
+        fetch._client = httpx.AsyncClient(transport=httpx.MockTransport(record))
+
+    def test_head_timeout_falls_back_to_get(self):
+        def handler(request):
+            if request.method == "HEAD":
+                raise httpx.ReadTimeout("timed out", request=request)
+            return httpx.Response(206, text="partial")
+
+        self.use_handler(handler)
+        result = fetch.fetch_url(
+            "https://example.org/", logging.getLogger(), False, "HEAD"
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual([r.method for r in self.requests], ["HEAD", "GET"])
+        self.assertEqual(self.requests[1].headers["Range"], "bytes=0-100")
+        self.assertEqual(self.requests[0].extensions["timeout"]["read"], 10.0)
+        self.assertEqual(self.requests[1].extensions["timeout"]["read"], 30.0)
+
+    def test_head_connect_error_does_not_retry(self):
+        def handler(request):
+            raise httpx.ConnectError("unreachable", request=request)
+
+        self.use_handler(handler)
+        result = fetch.fetch_url(
+            "https://example.org/", logging.getLogger(), False, "HEAD"
+        )
+        self.assertIsNone(result)
+        self.assertEqual([r.method for r in self.requests], ["HEAD"])
 
 
 if __name__ == "__main__":
