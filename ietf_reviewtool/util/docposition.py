@@ -173,10 +173,12 @@ class DocPosition:
             # a wrapped caption
             pass
         elif CAPTION.match(body) and indent > self.base_indent:
-            # a caption ends the figure or table it belongs to
+            # a caption ends the figure or table it belongs to, unless that is
+            # within a list item
             if self.kind is None:
                 self._new_element("fig")
-            self.kind = "closed"
+            if self.kind != "list":
+                self.kind = "closed"
             self.in_caption = True
             self.block_start = True
         else:

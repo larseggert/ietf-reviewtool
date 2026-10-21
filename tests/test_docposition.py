@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-2.0
 import unittest
 from types import SimpleNamespace
 
-from ietf_reviewtool.review import IetfReview
+from ietf_reviewtool.review import IetfReview, _next_originals
 from ietf_reviewtool.util.docposition import DocPosition, body_indent
 
 DOC = """\
@@ -137,6 +137,8 @@ class TestDocPosition(unittest.TestCase):
             "      | A |---->| B |\n",
             "      +---+     +---+\n",
             "\n",
+            "                          Figure 1: A diagram\n",
+            "\n",
             "   *  Second item.\n",
             "\n",
             "   Paragraph after the list.\n",
@@ -144,7 +146,14 @@ class TestDocPosition(unittest.TestCase):
         ]
         pos = positions(lines)
         self.assertEqual(pos["| A |---->| B |"], ("Section 1", 1))
+        self.assertEqual(pos["Figure 1: A diagram"], ("Section 1", 1))
+        self.assertEqual(pos["*  Second item."], ("Section 1", 1))
         self.assertEqual(pos["Paragraph after the list."], ("Section 1", 2))
+
+    def test_next_originals(self):
+        """Each diff line maps to the next line of the original document."""
+        diff = ["  a\n", "+ b\n", "? ^\n", "- c\n", "+ d\n"]
+        self.assertEqual(_next_originals(diff), ["- c\n", "- c\n", "- c\n", None, None])
 
     def test_figure_after_list(self):
         """A centered figure following a list is a separate element."""
