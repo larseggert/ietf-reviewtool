@@ -36,6 +36,10 @@ def _indent(text: str) -> int:
     return len(text) - len(text.lstrip())
 
 
+def _centered(indent: int, body: str) -> bool:
+    return abs(indent - (LINE_LENGTH - len(body)) // 2) <= 2
+
+
 def body_indent(lines: list[str]) -> int:
     """
     Return the indentation of the body text of a document, i.e., the most common
@@ -232,8 +236,9 @@ class DocPosition:
         """
         if indent != self.base_indent or ART.match(body):
             if self.kind == "list" and indent >= self.list_indent:
-                if ART.match(body):
-                    # a figure or table following a list
+                if ART.match(body) and _centered(indent, body):
+                    # a centered figure or table following a list, while those
+                    # within a list item are aligned with its text
                     self._new_element("fig")
             elif self.kind != "fig":
                 # artwork or an indented block following text: a figure, table, etc.
@@ -252,7 +257,12 @@ class DocPosition:
             # a list item or a definition list entry
             if self.kind != "list":
                 self._new_element("list")
-            self.list_indent = indent + marker.end() if marker else indent + 1
+            if marker:
+                self.list_indent = indent + marker.end()
+            elif nxt_indent is not None and nxt_indent > indent:
+                self.list_indent = nxt_indent
+            else:
+                self.list_indent = indent + 3
             return
 
         self._new_element("p")

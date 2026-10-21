@@ -122,6 +122,54 @@ class TestDocPosition(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertEqual(pos[line], exp)
 
+    def test_artwork_in_list(self):
+        """Artwork within a list item belongs to the list."""
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   *  First item, with a diagram:\n",
+            "\n",
+            "      +---+     +---+\n",
+            "      | A |---->| B |\n",
+            "      +---+     +---+\n",
+            "\n",
+            "   *  Second item.\n",
+            "\n",
+            "   Paragraph after the list.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos["| A |---->| B |"], ("Section 1", 1))
+        self.assertEqual(pos["Paragraph after the list."], ("Section 1", 2))
+
+    def test_figure_after_list(self):
+        """A centered figure following a list is a separate element."""
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   *  First item.\n",
+            "\n",
+            "   *  Second item.\n",
+            "\n",
+            "                          +---+     +---+\n",
+            "                          | A |---->| B |\n",
+            "                          +---+     +---+\n",
+            "\n",
+            "   Paragraph after the figure.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos["| A |---->| B |"], ("Section 1", 2))
+        self.assertEqual(pos["Paragraph after the figure."], ("Section 1", 3))
+
 
 class TestCommentPosition(unittest.TestCase):
     """Tests for the paragraph numbers of review comments."""
@@ -153,6 +201,32 @@ class TestCommentPosition(unittest.TestCase):
         self.assertEqual(
             headings(review(LINES, current), "comment"),
             ["Section 1, paragraph 1"],
+        )
+
+    def test_comment_after_term(self):
+        """A comment after a definition list term does not change the numbering."""
+        orig = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   First term\n",
+            "      Its definition.\n",
+            "\n",
+            "   Second term\n",
+            "      Its definition.\n",
+            "\n",
+            "   Paragraph after the list.\n",
+            "\n",
+        ]
+        current = list(orig)
+        current.insert(7, "COMMENT: About the first term.\n")
+        current.append("COMMENT: About the paragraph.\n")
+        self.assertEqual(
+            headings(review(orig, current), "comment"),
+            ["Section 1, paragraph 1", "Section 1, paragraph 2"],
         )
 
     def test_comment_in_list(self):

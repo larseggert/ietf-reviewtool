@@ -67,6 +67,18 @@ def strip_nits_from_diff(diff: list) -> list:
     return result
 
 
+def _next_original(diff: list, num: int) -> str | None:
+    """
+    Return the next line of the original document in a diff after the given one.
+
+    @param      diff  The diff
+    @param      num   The index of the current line in the diff
+
+    @return     The next line from the original document, or None.
+    """
+    return next((line for line in diff[num + 1 :] if line[0] in " -"), None)
+
+
 class IetfReview:
     "Class to handle an IETF document review."
 
@@ -361,7 +373,7 @@ class IetfReview:
                 changed[kind].append(cur)
 
             # also count the last line, a pending nit may be in it
-            doc_pos.update(nxt, cur)
+            doc_pos.update(_next_original(diff, num), cur)
 
             prev = kind
 
@@ -422,4 +434,4 @@ class IetfReview:
                     )
 
             if nxt is not None:
-                doc_pos.update(nxt, cur)
+                doc_pos.update(_next_original(diff, num), cur)
