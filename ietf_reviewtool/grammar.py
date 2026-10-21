@@ -107,6 +107,53 @@ def _check_text_chunked(lt: language_tool_python.LanguageTool, full_text: str) -
     return issues
 
 
+def line_starts(lines: list[str], unfolded: str) -> list[int]:
+    """
+    Return where each line starts in the unfolded text of the lines.
+
+    @param      lines     The lines of text
+    @param      unfolded  The result of unfold() on the joined lines
+
+    @return     The offset of each line in the unfolded text. A line whose text cannot
+                be found (e.g., a blank one) gets the offset just past the text of
+                the preceding line, so it is only reached after all of that text.
+    """
+    starts = []
+    pos = 0
+    for line in lines:
+        text = line.strip()
+        found = unfolded.find(text, pos) if text else -1
+        if found >= 0:
+            # search on after this line, so repeated text maps to its next occurrence
+            pos = found + len(text)
+            starts.append(found)
+        else:
+            starts.append(pos)
+    return starts
+
+
+def advance_to(
+    doc_pos: DocPosition, lines: list[str], starts: list[int], cur: int, offset: int
+) -> int:
+    """
+    Advance a document position to the line containing an offset in the unfolded
+    text, including that line.
+
+    @param      doc_pos  The document position, at line cur
+    @param      lines    The lines of text
+    @param      starts   Where each line starts in the unfolded text (see line_starts)
+    @param      cur      The index of the next line to process
+    @param      offset   The offset in the unfolded text
+
+    @return     The index of the next line to process.
+    """
+    while cur < len(lines) and starts[cur] <= offset:
+        nxt = lines[cur + 1] if cur + 1 < len(lines) else None
+        doc_pos.update(nxt, lines[cur], is_diff=False)
+        cur += 1
+    return cur
+
+
 def check_grammar(
     text: list,
     grammar_skip_rules: str,
@@ -127,6 +174,8 @@ def check_grammar(
     lt = language_tool_python.LanguageTool("en-US")
 
     full_text = unfold("".join(text))
+    # issue offsets are into the unfolded text
+    starts = line_starts(text, full_text)
     extra_skip = set(grammar_skip_rules.split(",")) if grammar_skip_rules else set()
     issues = [
         i
@@ -138,12 +187,8 @@ def check_grammar(
 
     doc_pos = DocPosition()
     cur = 0
-    pos = 0
     for issue in issues:
-        while pos + len(text[cur]) <= issue.offset:
-            doc_pos.update(text[cur + 1], text[cur], is_diff=False)
-            pos += len(text[cur])
-            cur += 1
+        cur = advance_to(doc_pos, text, starts, cur, issue.offset)
 
         nit = doc_pos.fmt_section_and_paragraph()
         if review.mkd:
