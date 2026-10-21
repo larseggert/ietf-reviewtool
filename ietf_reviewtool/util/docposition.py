@@ -44,7 +44,7 @@ class DocPosition:
             line += f", {level}"
         return line + "\n"
 
-    def update(self, nxt: str, cur: str, is_diff: bool = True) -> None:
+    def update(self, nxt: str | None, cur: str, is_diff: bool = True) -> None:
         """
         Return a list consisting of the current paragraph number and section title,
         based on the next and current lines of text and the current paragraph number and

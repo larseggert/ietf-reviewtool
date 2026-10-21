@@ -115,16 +115,43 @@ def line_starts(lines: list[str], unfolded: str) -> list[int]:
     @param      unfolded  The result of unfold() on the joined lines
 
     @return     The offset of each line in the unfolded text. A line whose text cannot
-                be found (e.g., a blank one) gets the offset of the preceding line.
+                be found (e.g., a blank one) gets the offset just past the text of
+                the preceding line, so it is only reached after all of that text.
     """
     starts = []
     pos = 0
     for line in lines:
-        found = unfolded.find(line.strip(), pos) if line.strip() else -1
+        text = line.strip()
+        found = unfolded.find(text, pos) if text else -1
         if found >= 0:
-            pos = found
-        starts.append(pos)
+            # search on after this line, so repeated text maps to its next occurrence
+            pos = found + len(text)
+            starts.append(found)
+        else:
+            starts.append(pos)
     return starts
+
+
+def advance_to(
+    doc_pos: DocPosition, lines: list[str], starts: list[int], cur: int, offset: int
+) -> int:
+    """
+    Advance a document position to the line containing an offset in the unfolded
+    text, including that line.
+
+    @param      doc_pos  The document position, at line cur
+    @param      lines    The lines of text
+    @param      starts   Where each line starts in the unfolded text (see line_starts)
+    @param      cur      The index of the next line to process
+    @param      offset   The offset in the unfolded text
+
+    @return     The index of the next line to process.
+    """
+    while cur < len(lines) and starts[cur] <= offset:
+        nxt = lines[cur + 1] if cur + 1 < len(lines) else None
+        doc_pos.update(nxt, lines[cur], is_diff=False)
+        cur += 1
+    return cur
 
 
 def check_grammar(
@@ -161,10 +188,7 @@ def check_grammar(
     doc_pos = DocPosition()
     cur = 0
     for issue in issues:
-        # process all lines up to and including the one containing the issue
-        while cur < len(text) - 1 and starts[cur] <= issue.offset:
-            doc_pos.update(text[cur + 1], text[cur], is_diff=False)
-            cur += 1
+        cur = advance_to(doc_pos, text, starts, cur, issue.offset)
 
         nit = doc_pos.fmt_section_and_paragraph()
         if review.mkd:
