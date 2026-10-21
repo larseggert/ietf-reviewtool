@@ -54,6 +54,32 @@ class TestStripNits(unittest.TestCase):
             comment_headings(strip_nits_from_diff(diff)), ["Section 1, paragraph 2"]
         )
 
+    def test_nit_before_deleted_blank_line(self):
+        """A nit followed by a deleted blank line refers to its own paragraph."""
+        orig = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   First paragraf.\n",
+            "\n",
+            "   Second paragraph.\n",
+        ]
+        current = orig[:6] + ["   First paragraph.\n"] + orig[8:]
+        rev = IetfReview(
+            SimpleNamespace(orig_lines=orig, current_lines=current),  # type: ignore
+            gen_mkd=False,
+            role="",
+            gh_id="@test",
+        )
+        data = rev._IetfReview__data  # type: ignore # pylint: disable=protected-access
+        self.assertEqual(
+            [item.split("\n")[0] for items in data["nit"].values() for item in items],
+            ["Section 1, paragraph 1"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
