@@ -63,6 +63,31 @@ class TestCommentPosition(unittest.TestCase):
         ]
         self.assertEqual(comment_headings(diff), ["Section 1"])
 
+    def test_nit_in_last_line(self):
+        """A nit in the last line of a document refers to its paragraph."""
+        orig = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   First paragraph.\n",
+            "\n",
+            "   Second paragraph.\n",
+        ]
+        rev = IetfReview(
+            SimpleNamespace(orig_lines=orig, current_lines=orig[:-1]),  # type: ignore
+            gen_mkd=False,
+            role="",
+            gh_id="@test",
+        )
+        data = rev._IetfReview__data  # type: ignore # pylint: disable=protected-access
+        self.assertEqual(
+            [item.split("\n")[0] for items in data["nit"].values() for item in items],
+            ["Section 1, paragraph 2"],
+        )
+
     def test_no_paragraph_zero(self):
         """Without a paragraph, only the section is named."""
         pos = DocPosition(sec_title="Section 1")
