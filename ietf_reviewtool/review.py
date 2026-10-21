@@ -1,5 +1,6 @@
 """IETF review class"""
 
+import copy
 import difflib
 import inspect
 import re
@@ -32,7 +33,13 @@ def strip_nits_from_diff(diff: list) -> list:
 
         kind = cur[0]
 
-        if cur in _EMPTY_DIFF_LINES:
+        if cur == "+ \n":
+            prev = kind
+            continue
+
+        if cur == "- \n":
+            # keep deleted blank lines of the original, they separate paragraphs
+            result.append("  \n")
             prev = kind
             continue
 
@@ -306,6 +313,8 @@ class IetfReview:
         doc_pos = DocPosition()
         prev = None
         heading_level = 4 if self.mkd else 0
+        # position of a pending nit, if a separator followed it
+        nit_pos: DocPosition | None = None
 
         for num, cur in enumerate(diff):
             # print(cur, end="")
@@ -317,6 +326,9 @@ class IetfReview:
             if cur in _EMPTY_DIFF_LINES:
                 prev = kind
                 if nxt:
+                    if (changed["-"] or changed["+"]) and nit_pos is None:
+                        nit_pos = copy.copy(doc_pos)
+                    doc_pos.update(nxt, cur)
                     continue
 
             if kind in ["+", "-"] and nxt_kind == "?":
@@ -340,9 +352,10 @@ class IetfReview:
             elif changed["-"] or changed["+"]:
                 self.nit(
                     "Typos",
-                    fmt_nit(changed, indicator, doc_pos, heading_level),
+                    fmt_nit(changed, indicator, nit_pos or doc_pos, heading_level),
                     wrap=False,
                 )
+                nit_pos = None
 
             elif not nxt and kind != " ":
                 changed[kind].append(cur)
@@ -355,7 +368,7 @@ class IetfReview:
         if changed["-"] or changed["+"]:
             self.nit(
                 "Typos",
-                fmt_nit(changed, indicator, doc_pos, heading_level),
+                fmt_nit(changed, indicator, nit_pos or doc_pos, heading_level),
                 wrap=False,
             )
 
