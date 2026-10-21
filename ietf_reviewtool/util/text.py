@@ -144,6 +144,26 @@ def extract_section_numbers(text: str) -> set[str]:
     return section_numbers
 
 
+def extract_section_references(text: str) -> set[str]:
+    """
+    Extract all section numbers that a document refers to, in itself or elsewhere.
+
+    @param      text  The document text
+
+    @return     Set of section numbers referenced (e.g., {"3.1.3.7"} from "Section
+                3.1.3.7 of [OpenID.Core]", or {"6.1", "7.2"} from "Sections 6.1 and
+                7.2").
+    """
+    references = set()
+    for match in re.finditer(
+        r"\bSections?\s+(\d+(?:\.\d+)*(?:(?:\s*,\s*|\s+(?:and|or|to)\s+)\d+(?:\.\d+)*)*)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        references |= set(re.findall(r"\d+(?:\.\d+)*", match.group(1)))
+    return references
+
+
 def extract_urls(
     text: str,
     log: logging.Logger,
@@ -161,7 +181,7 @@ def extract_urls(
     @return     List of URLs.
     """
 
-    section_numbers = extract_section_numbers(text)
+    section_numbers = extract_section_numbers(text) | extract_section_references(text)
     urls: dict[str, set] = {}
     for part, part_text in doc_parts(text).items():
         urls.setdefault(part, set())
