@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-2.0
 import logging
 import re
 import unittest
+from unittest import mock
 
 import httpx
 
@@ -247,6 +248,25 @@ class TestReviewItem(unittest.TestCase):
             with self.subTest(pos=pos):
                 self.compute_and_verify_result(self.two_lines, review, exp)
 
+
+class TestCheckUrls(unittest.TestCase):
+    """
+    Tests for check_urls().
+    """
+
+    def test_reachability_checks_bypass_cache(self):
+        fetch = mock.AsyncMock(return_value="")
+        urls = {"part": {"https://example.org/", "http://example.com/"}}
+        with (
+            mock.patch.object(irt, "extract_urls", return_value=urls),
+            mock.patch.object(irt, "fetch_url_async", fetch),
+        ):
+            irt.check_urls(mock.MagicMock(), mock.MagicMock())
+
+        self.assertEqual(fetch.call_count, 3)
+        for call in fetch.call_args_list:
+            self.assertIs(call.kwargs["use_cache"], False)
+            self.assertEqual(call.kwargs["method"], "HEAD")
 
 class TestFetchUrl(unittest.TestCase):
     """

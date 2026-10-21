@@ -568,13 +568,12 @@ def check_html_entities(doc: Doc, review: IetfReview) -> None:
             )
 
 
-def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
+def check_urls(doc: Doc, review: IetfReview) -> None:
     """
     Check the reachability and various other aspects of URLs in the document/
 
     @param      doc      The document text
     @param      review   IETF Review object
-    @param      verbose  Whether to be verbose during the checks
 
     @return     None
     """
@@ -604,7 +603,10 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
         review.nit_bullets("URLs", "Found non-HTTP URLs in the document:", result)
 
     reachability = fetch_parallel(
-        {u: lambda u=u: fetch_url_async(u, log, verbose, "HEAD") for u in urls}
+        {
+            u: lambda u=u: fetch_url_async(u, log, use_cache=False, method="HEAD")
+            for u in urls
+        }
     )
     result = [u for u in urls if reachability[u] is None]
     if result:
@@ -619,7 +621,7 @@ def check_urls(doc: Doc, review: IetfReview, verbose: bool) -> None:
     }
     https_reachability = fetch_parallel(
         {
-            u: lambda tu=tu: fetch_url_async(tu, log, verbose, "HEAD")
+            u: lambda tu=tu: fetch_url_async(tu, log, use_cache=False, method="HEAD")
             for u, tu in http_urls.items()
         }
     )
@@ -954,7 +956,7 @@ def review_items(
             check_refs(doc, review, state.datatracker, log)
 
         if chk_urls:
-            check_urls(doc, review, verbose)
+            check_urls(doc, review)
 
         if chk_inclusiv:
             check_inclusivity(doc, review, log, verbose)
