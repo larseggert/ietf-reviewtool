@@ -63,6 +63,26 @@ class TestCommentPosition(unittest.TestCase):
         ]
         self.assertEqual(comment_headings(diff), ["Section 1"])
 
+    def test_wrapped_heading(self):
+        """The second line of a wrapped section heading is not a paragraph."""
+        diff = [
+            "  Abstract\n",
+            "  \n",
+            "     The abstract.\n",
+            "  \n",
+            "  1.  Introduction, With a Heading That Is Long Enough to Wrap Onto\n",
+            "        a Second Line\n",
+            "  \n",
+            "+ COMMENT: About the section.\n",
+            "     First paragraph.\n",
+            "+ COMMENT: About the first paragraph.\n",
+            "  \n",
+            "     Second paragraph.\n",
+        ]
+        self.assertEqual(
+            comment_headings(diff), ["Section 1", "Section 1, paragraph 1"]
+        )
+
     def test_nit_in_last_line(self):
         """A nit in the last line of a document refers to its paragraph."""
         orig = [

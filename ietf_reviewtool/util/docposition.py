@@ -80,7 +80,8 @@ class DocPosition:
             if re.match(r"\d", pot_sec_title):
                 if self.had_non_numbered_sec:
                     self.para_num = 0
-                    self.block_start = True
+                    # the heading may wrap, the blank line after it starts the body
+                    self.block_start = False
                     self.sec_title = (
                         "Section " + re.sub(r"(.*)\.$", r"\1", pot_sec_title)
                         if re.match(r"\d", pot_sec_title)
@@ -89,7 +90,7 @@ class DocPosition:
                     return
             else:
                 self.para_num = 0
-                self.block_start = True
+                self.block_start = False
                 self.had_non_numbered_sec = True
                 self.sec_title = f'"{pot_sec_title}"'
                 return

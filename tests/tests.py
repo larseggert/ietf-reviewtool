@@ -268,6 +268,7 @@ class TestCheckUrls(unittest.TestCase):
             self.assertIs(call.kwargs["use_cache"], False)
             self.assertEqual(call.kwargs["method"], "HEAD")
 
+
 class TestFetchUrl(unittest.TestCase):
     """
     Tests for fetch_url().
