@@ -360,8 +360,8 @@ class IetfReview:
             elif not nxt and kind != " ":
                 changed[kind].append(cur)
 
-            if nxt:
-                doc_pos.update(nxt, cur)
+            # also count the last line, a pending nit may be in it
+            doc_pos.update(nxt, cur)
 
             prev = kind
 
