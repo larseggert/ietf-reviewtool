@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-2.0
 import logging
 import unittest
 
-from ietf_reviewtool.util.text import extract_urls
+from ietf_reviewtool.util.text import extract_urls, mask_section_references
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +54,38 @@ class TestExtractUrls(unittest.TestCase):
             "   See Section 3.1.3.7 and ftp://ftp.rfc-editor.org/in-notes/x.txt.\n"
         )
         self.assertEqual(all_urls(text), {"ftp://ftp.rfc-editor.org/in-notes/x.txt"})
+
+    def test_oxford_comma_list_skipped(self):
+        """All numbers in a list with a serial comma are skipped."""
+        for conj in ("and", "or"):
+            with self.subTest(conj=conj):
+                text = (
+                    "1.  Introduction\n"
+                    "\n"
+                    f"   See Sections 3.1.3.7, 4.1.3.7, {conj} 5.1.3.7 of [X].\n"
+                )
+                self.assertEqual(all_urls(text), set())
+
+    def test_address_equal_to_reference_kept(self):
+        """An address that equals a referenced section number is still found."""
+        text = (
+            "1.  Introduction\n"
+            "\n"
+            "   See Section 3.1.3.7 of [OtherSpec].  The resolver address is\n"
+            "   3.1.3.7.\n"
+        )
+        self.assertEqual(all_urls(text), {"3.1.3.7"})
+
+
+class TestMaskSectionReferences(unittest.TestCase):
+    """Tests for mask_section_references()."""
+
+    def test_mask(self):
+        """Only the numbers in section references are masked."""
+        self.assertEqual(
+            mask_section_references("Sections 6.1,\n   7.2, and 8 of RFC 9000."),
+            "Sections    ,\n      , and   of RFC 9000.",
+        )
 
 
 if __name__ == "__main__":

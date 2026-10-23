@@ -144,24 +144,30 @@ def extract_section_numbers(text: str) -> set[str]:
     return section_numbers
 
 
-def extract_section_references(text: str) -> set[str]:
+# pattern matching references to sections, e.g., "Sections 6.1, 6.2, and 7.1"
+SECTION_REFERENCE = re.compile(
+    r"\bSections?\s+(\d+(?:\.\d+)*"
+    r"(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to)\s+)\d+(?:\.\d+)*)*)",
+    flags=re.IGNORECASE,
+)
+
+
+def mask_section_references(text: str) -> str:
     """
-    Extract all section numbers that a document refers to, in itself or elsewhere.
+    Replace the numbers in references to sections, in the document itself or in
+    others, with spaces.
 
     @param      text  The document text
 
-    @return     Set of section numbers referenced (e.g., {"3.1.3.7"} from "Section
-                3.1.3.7 of [OpenID.Core]", or {"6.1", "7.2"} from "Sections 6.1 and
-                7.2").
+    @return     The text, with "Section 3.1.3.7 of [OpenID.Core]" becoming
+                "Section          of [OpenID.Core]".
     """
-    references = set()
-    for match in re.finditer(
-        r"\bSections?\s+(\d+(?:\.\d+)*(?:(?:\s*,\s*|\s+(?:and|or|to)\s+)\d+(?:\.\d+)*)*)",
-        text,
-        flags=re.IGNORECASE,
-    ):
-        references |= set(re.findall(r"\d+(?:\.\d+)*", match.group(1)))
-    return references
+
+    def mask(match: re.Match[str]) -> str:
+        refs = re.sub(r"\d+(?:\.\d+)*", lambda num: " " * len(num[0]), match[1])
+        return match[0][: match.start(1) - match.start(0)] + refs
+
+    return SECTION_REFERENCE.sub(mask, text)
 
 
 def extract_urls(
@@ -181,9 +187,10 @@ def extract_urls(
     @return     List of URLs.
     """
 
-    section_numbers = extract_section_numbers(text) | extract_section_references(text)
+    section_numbers = extract_section_numbers(text)
     urls: dict[str, set] = {}
-    for part, part_text in doc_parts(text).items():
+    # urlextract mistakes section numbers in references for hosts
+    for part, part_text in doc_parts(mask_section_references(text)).items():
         urls.setdefault(part, set())
 
         # find all URLs in part
