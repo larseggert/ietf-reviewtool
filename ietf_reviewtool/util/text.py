@@ -144,6 +144,32 @@ def extract_section_numbers(text: str) -> set[str]:
     return section_numbers
 
 
+# pattern matching references to sections, e.g., "Sections 6.1, 6.2, and 7.1"
+SECTION_REFERENCE = re.compile(
+    r"\bSections?\s+(\d+(?:\.\d+)*"
+    r"(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to)\s+)\d+(?:\.\d+)*)*)",
+    flags=re.IGNORECASE,
+)
+
+
+def mask_section_references(text: str) -> str:
+    """
+    Replace the numbers in references to sections, in the document itself or in
+    others, with spaces.
+
+    @param      text  The document text
+
+    @return     The text, with "Section 3.1.3.7 of [OpenID.Core]" becoming
+                "Section          of [OpenID.Core]".
+    """
+
+    def mask(match: re.Match[str]) -> str:
+        refs = re.sub(r"\d+(?:\.\d+)*", lambda num: " " * len(num[0]), match[1])
+        return match[0][: match.start(1) - match.start(0)] + refs
+
+    return SECTION_REFERENCE.sub(mask, text)
+
+
 def extract_urls(
     text: str,
     log: logging.Logger,
@@ -163,7 +189,8 @@ def extract_urls(
 
     section_numbers = extract_section_numbers(text)
     urls: dict[str, set] = {}
-    for part, part_text in doc_parts(text).items():
+    # urlextract mistakes section numbers in references for hosts
+    for part, part_text in doc_parts(mask_section_references(text)).items():
         urls.setdefault(part, set())
 
         # find all URLs in part
