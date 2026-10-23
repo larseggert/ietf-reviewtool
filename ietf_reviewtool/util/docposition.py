@@ -88,6 +88,8 @@ class DocPosition:
         self.base_indent = base_indent
         # indentation of the text of the current list's items
         self.list_indent = 0
+        # type of the current list: "bullet", "ordered" or "definition"
+        self.list_type = ""
         # the previous line of the original document
         self.prev_text = ""
         # whether the next non-blank line starts a new block of text
@@ -172,7 +174,11 @@ class DocPosition:
         if self.in_caption and indent > self.base_indent:
             # a wrapped caption
             pass
-        elif CAPTION.match(body) and indent > self.base_indent:
+        elif CAPTION.match(body) and (
+            indent > self.base_indent
+            # a wide caption may be centered at body indentation
+            or (self.kind == "fig" and _centered(indent, body))
+        ):
             # a caption ends the figure or table it belongs to, unless that is
             # within a list item
             if self.kind is None:
@@ -257,8 +263,16 @@ class DocPosition:
             nxt_indent != indent or nxt_item
         ):
             # a list item or a definition list entry
-            if self.kind != "list":
+            if marker is None:
+                list_type = "definition"
+            elif marker.group(0)[0] in "*\u2022o":
+                list_type = "bullet"
+            else:
+                list_type = "ordered"
+            if self.kind != "list" or list_type != self.list_type:
+                # a list of another type following a list is a separate one
                 self._new_element("list")
+                self.list_type = list_type
             if marker:
                 self.list_indent = indent + marker.end()
             elif nxt_indent is not None and nxt_indent > indent:

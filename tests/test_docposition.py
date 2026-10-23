@@ -179,6 +179,57 @@ class TestDocPosition(unittest.TestCase):
         self.assertEqual(pos["| A |---->| B |"], ("Section 1", 2))
         self.assertEqual(pos["Paragraph after the figure."], ("Section 1", 3))
 
+    def test_adjacent_lists(self):
+        """Adjacent lists of different types are separate elements."""
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   *  A bullet.\n",
+            "\n",
+            "   *  Another bullet.\n",
+            "\n",
+            "   1.  A numbered item.\n",
+            "\n",
+            "   2.  Another numbered item.\n",
+            "\n",
+            "   Paragraph after the lists.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos["*  Another bullet."], ("Section 1", 1))
+        self.assertEqual(pos["2.  Another numbered item."], ("Section 1", 2))
+        self.assertEqual(pos["Paragraph after the lists."], ("Section 1", 3))
+
+    def test_wide_caption(self):
+        """A caption centered at body indentation belongs to its figure."""
+        caption = "Figure 1: A caption just wide enough to be centered at column four"
+        self.assertEqual((72 - len(caption)) // 2, 3)
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   Paragraph before the figure.\n",
+            "\n",
+            "      +---+     +---+\n",
+            "      | A |---->| B |\n",
+            "      +---+     +---+\n",
+            "\n",
+            "   " + caption + "\n",
+            "\n",
+            "   Paragraph after the figure.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos[caption], ("Section 1", 2))
+        self.assertEqual(pos["Paragraph after the figure."], ("Section 1", 3))
+
 
 class TestCommentPosition(unittest.TestCase):
     """Tests for the paragraph numbers of review comments."""
