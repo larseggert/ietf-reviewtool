@@ -144,10 +144,13 @@ def extract_section_numbers(text: str) -> set[str]:
     return section_numbers
 
 
+# a complete section number, not the start of a name such as "3gpp.org"
+SECTION_NUMBER = r"\d+(?:\.\d+)*(?![\w-]|\.[\w-])"
+
 # pattern matching references to sections, e.g., "Sections 6.1, 6.2, and 7.1"
 SECTION_REFERENCE = re.compile(
-    r"\bSections?\s+(\d+(?:\.\d+)*"
-    r"(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to)\s+)\d+(?:\.\d+)*)*)",
+    rf"\bSections?\s+({SECTION_NUMBER}"
+    rf"(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to)\s+){SECTION_NUMBER})*)",
     flags=re.IGNORECASE,
 )
 

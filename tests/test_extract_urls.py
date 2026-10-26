@@ -76,6 +76,14 @@ class TestExtractUrls(unittest.TestCase):
         )
         self.assertEqual(all_urls(text), {"3.1.3.7"})
 
+    def test_numeric_hostname_kept(self):
+        """A hostname starting with a digit is not cut short after "Section"."""
+        for text in ("See Section 3.1 or 3gpp.org.", "See Section 3gpp.org."):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    all_urls(f"1.  Introduction\n\n   {text}\n"), {"3gpp.org"}
+                )
+
 
 class TestMaskSectionReferences(unittest.TestCase):
     """Tests for mask_section_references()."""
@@ -85,6 +93,13 @@ class TestMaskSectionReferences(unittest.TestCase):
         self.assertEqual(
             mask_section_references("Sections 6.1,\n   7.2, and 8 of RFC 9000."),
             "Sections    ,\n      , and   of RFC 9000.",
+        )
+
+    def test_numeric_hostname_not_masked(self):
+        """A hostname starting with a digit is not part of a reference."""
+        self.assertEqual(
+            mask_section_references("Section 3.1 or 3gpp.org"),
+            "Section     or 3gpp.org",
         )
 
 
