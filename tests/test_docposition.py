@@ -230,6 +230,75 @@ class TestDocPosition(unittest.TestCase):
         self.assertEqual(pos[caption], ("Section 1", 2))
         self.assertEqual(pos["Paragraph after the figure."], ("Section 1", 3))
 
+    def test_wrapped_wide_caption(self):
+        """Centered continuation lines of a wide caption belong to its figure."""
+        first = "Figure 1: A caption that is long enough to wrap onto a second line of"
+        second = "text, and a continuation line just wide enough to be centered here"
+        self.assertEqual((72 - len(first)) // 2, 1)
+        self.assertEqual((72 - len(second)) // 2, 3)
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   Paragraph before the figure.\n",
+            "\n",
+            "      +---+     +---+\n",
+            "      | A |---->| B |\n",
+            "      +---+     +---+\n",
+            "\n",
+            " " + first + "\n",
+            "   " + second + "\n",
+            "\n",
+            "   Paragraph after the figure.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos[second], ("Section 1", 2))
+        self.assertEqual(pos["Paragraph after the figure."], ("Section 1", 3))
+
+    def test_last_item_before_page_break(self):
+        """The last item of a list stays in it when the blank line after it is gone."""
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   1.  First\n",
+            "   2.  Last\n",
+            "   Paragraph after the list.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos["2.  Last"], ("Section 1", 1))
+        self.assertEqual(pos["Paragraph after the list."], ("Section 1", 2))
+
+    def test_alphabetic_list_with_o(self):
+        """An "o." item of an alphabetic list is not a bullet."""
+        lines = [
+            "Abstract\n",
+            "\n",
+            "   The abstract.\n",
+            "\n",
+            "1.  Introduction\n",
+            "\n",
+            "   n.  An item.\n",
+            "\n",
+            "   o.  Another item.\n",
+            "\n",
+            "   p.  A third item.\n",
+            "\n",
+            "   Paragraph after the list.\n",
+            "\n",
+        ]
+        pos = positions(lines)
+        self.assertEqual(pos["p.  A third item."], ("Section 1", 1))
+        self.assertEqual(pos["Paragraph after the list."], ("Section 1", 2))
+
 
 class TestCommentPosition(unittest.TestCase):
     """Tests for the paragraph numbers of review comments."""

@@ -171,7 +171,11 @@ class DocPosition:
         # track paragraphs
         indent = _indent(text)
         body = text.strip()
-        if self.in_caption and indent > self.base_indent:
+        if self.in_caption and (
+            indent > self.base_indent
+            # the continuation of a wide caption may be centered at body indentation
+            or (_centered(indent, body) and _indent(self.prev_text) <= self.base_indent)
+        ):
             # a wrapped caption
             pass
         elif CAPTION.match(body) and (
@@ -259,13 +263,15 @@ class DocPosition:
             LIST_MARKER.match(nxt_text.strip()) or DEFINITION.match(nxt_text.strip())
         )
         if (marker or DEFINITION.match(body) or (nxt_indent or 0) > indent) and (
-            # unless it is a paragraph that merely starts like an item
-            nxt_indent != indent or nxt_item
+            # unless it is a paragraph that merely starts like an item, which an item
+            # of the current list followed by text whose blank line was removed along
+            # with a page break is not
+            nxt_indent != indent or nxt_item or (marker and self.kind == "list")
         ):
             # a list item or a definition list entry
             if marker is None:
                 list_type = "definition"
-            elif marker.group(0)[0] in "*\u2022o":
+            elif marker.group(0).rstrip() in ("*", "\u2022", "o"):
                 list_type = "bullet"
             else:
                 list_type = "ordered"
