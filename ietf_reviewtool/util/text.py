@@ -192,12 +192,12 @@ def extract_urls(
 
     section_numbers = extract_section_numbers(text)
     urls: dict[str, set] = {}
-    # urlextract mistakes section numbers in references for hosts
-    for part, part_text in doc_parts(mask_section_references(text)).items():
+    for part, part_text in doc_parts(text).items():
         urls.setdefault(part, set())
 
-        # find all URLs in part
-        part_text = unfold(part_text)
+        # find all URLs in part; urlextract mistakes section numbers in references
+        # for hosts, so mask those, but only once wrapped URLs have been reassembled
+        part_text = mask_section_references(unfold(part_text))
         try:
             extracted_urls = extractor.find_urls(
                 text=part_text, with_schema_only=False, only_unique=True

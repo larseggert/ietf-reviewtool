@@ -84,6 +84,19 @@ class TestExtractUrls(unittest.TestCase):
                     all_urls(f"1.  Introduction\n\n   {text}\n"), {"3gpp.org"}
                 )
 
+    def test_wrapped_url_ending_in_section_kept(self):
+        """A URL ending in "#section" and a number wrapped onto the next line is
+        reassembled before section references are masked."""
+        text = (
+            "1.  Introduction\n"
+            "\n"
+            "   See <https://www.ietf.org/spec.html#section\n"
+            "   3.1.3.7>.\n"
+        )
+        self.assertEqual(
+            all_urls(text), {"https://www.ietf.org/spec.html#section3.1.3.7"}
+        )
+
 
 class TestMaskSectionReferences(unittest.TestCase):
     """Tests for mask_section_references()."""
