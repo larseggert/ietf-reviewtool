@@ -7,7 +7,7 @@ import re
 import textwrap
 
 from .doc import Doc
-from .util.docposition import DocPosition
+from .util.docposition import DocPosition, body_indent
 from .util.format import fmt_comment, fmt_nit
 from .util.text import wrap_para
 
@@ -64,6 +64,23 @@ def strip_nits_from_diff(diff: list) -> list:
 
         result.append(cur)
         prev = kind
+    return result
+
+
+def _next_originals(diff: list) -> list[str | None]:
+    """
+    Return, for each line of a diff, the next line of the original document.
+
+    @param      diff  The diff
+
+    @return     The next line from the original document after each line, or None.
+    """
+    result: list[str | None] = [None] * len(diff)
+    nxt: str | None = None
+    for num in range(len(diff) - 1, -1, -1):
+        result[num] = nxt
+        if diff[num][0] in " -":
+            nxt = diff[num]
     return result
 
 
@@ -310,7 +327,8 @@ class IetfReview:
         """
         changed: dict[str, list[str]] = {"+": [], "-": []}
         indicator: dict[str, list[str]] = {"+": [], "-": []}
-        doc_pos = DocPosition()
+        doc_pos = DocPosition(base_indent=body_indent(self.doc.orig_lines))
+        next_orig = _next_originals(diff)
         prev = None
         heading_level = 4 if self.mkd else 0
         # position of a pending nit, if a separator followed it
@@ -361,7 +379,7 @@ class IetfReview:
                 changed[kind].append(cur)
 
             # also count the last line, a pending nit may be in it
-            doc_pos.update(nxt, cur)
+            doc_pos.update(next_orig[num], cur)
 
             prev = kind
 
@@ -379,7 +397,8 @@ class IetfReview:
         @param      diff    A diff with nits removed (by strip_nits_from_diff)
         @param      review  IETF Review object.
         """
-        doc_pos = DocPosition()
+        doc_pos = DocPosition(base_indent=body_indent(self.doc.orig_lines))
+        next_orig = _next_originals(diff)
         item: dict = {}
         heading_level = 3 if self.mkd else 0
 
@@ -422,4 +441,4 @@ class IetfReview:
                     )
 
             if nxt is not None:
-                doc_pos.update(nxt, cur)
+                doc_pos.update(next_orig[num], cur)
