@@ -144,6 +144,35 @@ def extract_section_numbers(text: str) -> set[str]:
     return section_numbers
 
 
+# a complete section number, not the start of a name such as "3gpp.org"
+SECTION_NUMBER = r"\d+(?:\.\d+)*(?![\w-]|\.[\w-])"
+
+# pattern matching references to sections, e.g., "Sections 6.1, 6.2, and 7.1"
+SECTION_REFERENCE = re.compile(
+    rf"\bSections?\s+({SECTION_NUMBER}"
+    rf"(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to)\s+){SECTION_NUMBER})*)",
+    flags=re.IGNORECASE,
+)
+
+
+def mask_section_references(text: str) -> str:
+    """
+    Replace the numbers in references to sections, in the document itself or in
+    others, with spaces.
+
+    @param      text  The document text
+
+    @return     The text, with "Section 3.1.3.7 of [OpenID.Core]" becoming
+                "Section          of [OpenID.Core]".
+    """
+
+    def mask(match: re.Match[str]) -> str:
+        refs = re.sub(r"\d+(?:\.\d+)*", lambda num: " " * len(num[0]), match[1])
+        return match[0][: match.start(1) - match.start(0)] + refs
+
+    return SECTION_REFERENCE.sub(mask, text)
+
+
 def extract_urls(
     text: str,
     log: logging.Logger,
@@ -166,8 +195,9 @@ def extract_urls(
     for part, part_text in doc_parts(text).items():
         urls.setdefault(part, set())
 
-        # find all URLs in part
-        part_text = unfold(part_text)
+        # find all URLs in part; urlextract mistakes section numbers in references
+        # for hosts, so mask those, but only once wrapped URLs have been reassembled
+        part_text = mask_section_references(unfold(part_text))
         try:
             extracted_urls = extractor.find_urls(
                 text=part_text, with_schema_only=False, only_unique=True
