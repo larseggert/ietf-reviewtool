@@ -69,6 +69,11 @@ _SPACE_RULES = {
     "SPACE_BETWEEN_NUMBER_AND_WORD",
 }
 
+# patterns matching the lines that start and end a code block, the former possibly
+# followed by the name of the file the code is in
+CODE_BEGINS = re.compile(r"^\s*<CODE BEGINS>(?:\s|$)")
+CODE_ENDS = re.compile(r"^\s*<CODE ENDS>\s*$")
+
 
 def code_lines(lines: list[str]) -> list[bool]:
     """
@@ -81,10 +86,10 @@ def code_lines(lines: list[str]) -> list[bool]:
     in_code = False
     result = []
     for line in lines:
-        if "<CODE BEGINS>" in line:
+        if CODE_BEGINS.match(line):
             in_code = True
         result.append(in_code)
-        if "<CODE ENDS>" in line:
+        if CODE_ENDS.match(line):
             in_code = False
     return result
 

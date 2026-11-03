@@ -101,12 +101,24 @@ class TestCodeLines(unittest.TestCase):
         """Lines from <CODE BEGINS> through <CODE ENDS> are code."""
         lines = [
             "   Text before.\n",
-            "   <CODE BEGINS> file \"x.c\"\n",
+            '   <CODE BEGINS> file "x.c"\n',
             "   int f(void);\n",
             "   <CODE ENDS>\n",
             "   Text after.\n",
         ]
         self.assertEqual(code_lines(lines), [False, True, True, True, False])
+
+    def test_markers_in_text(self):
+        """Markers quoted in prose or code are not markers."""
+        lines = [
+            '   Start each example with the "<CODE BEGINS>" marker.\n',
+            "   Text after.\n",
+            "   <CODE BEGINS>\n",
+            '   printf("<CODE ENDS>");\n',
+            "   <CODE ENDS>\n",
+            "   Text after.\n",
+        ]
+        self.assertEqual(code_lines(lines), [False, False, True, True, True, False])
 
 
 class TestFmtMessage(unittest.TestCase):
