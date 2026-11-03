@@ -119,6 +119,25 @@ def fmt_message(message: str) -> str:
     return message
 
 
+# Terms that trip a rule, keyed by that rule; matched at the issue's offset.
+_TERMS = {
+    "RELY_ON": re.compile(r"relying\s+part(?:y|ies)\b", re.IGNORECASE),
+}
+
+
+def is_term(issue, text: str) -> bool:
+    """
+    Return whether a grammar issue is a term that merely trips its rule.
+
+    @param      issue  The grammar issue
+    @param      text   The text the issue offset is into
+
+    @return     True if the issue should not be flagged.
+    """
+    term = _TERMS.get(issue.rule_id)
+    return term is not None and term.match(text, issue.offset) is not None
+
+
 def _check_text_chunked(lt: language_tool_python.LanguageTool, full_text: str) -> list:
     """
     Check text for grammar issues, chunking at paragraph boundaries.
@@ -239,6 +258,7 @@ def check_grammar(
         if i.rule_id not in _SKIP_RULES
         and not i.rule_id.startswith("EN_REPEATEDWORDS_")
         and i.rule_id not in extra_skip
+        and not is_term(i, full_text)
     ]
 
     in_code = code_lines(text)

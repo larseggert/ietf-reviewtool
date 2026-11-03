@@ -5,12 +5,14 @@ SPDX-License-Identifier: GPL-2.0
 """
 
 import unittest
+from types import SimpleNamespace
 
 from ietf_reviewtool.grammar import (
     _SKIP_RULES,
     advance_to,
     code_lines,
     fmt_message,
+    is_term,
     line_starts,
 )
 from ietf_reviewtool.util.docposition import DocPosition
@@ -152,6 +154,34 @@ class TestSkipRules(unittest.TestCase):
         for rule in ("EN_UNPAIRED_BRACKETS", "EN_UNPAIRED_QUOTES"):
             with self.subTest(rule=rule):
                 self.assertIn(rule, _SKIP_RULES)
+
+
+class TestIsTerm(unittest.TestCase):
+    """Tests for is_term()."""
+
+    @staticmethod
+    def _issue(text, rule_id="RELY_ON"):
+        return SimpleNamespace(rule_id=rule_id, offset=text.lower().index("relying"))
+
+    def test_relying_party(self):
+        """The term Relying Party is not a misuse of the verb."""
+        for text in (
+            "sent to a Verifier or Relying Party, such as",
+            "sent to relying parties.",
+            "the relying\nparty checks it",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(is_term(self._issue(text), text))
+
+    def test_other_rely(self):
+        """Other uses of the verb are still flagged."""
+        text = "Implementations relying the server must not."
+        self.assertFalse(is_term(self._issue(text), text))
+
+    def test_other_rule(self):
+        """Only the rule the term trips over is excused."""
+        text = "a Relying Party"
+        self.assertFalse(is_term(self._issue(text, "OTHER_RULE"), text))
 
 
 if __name__ == "__main__":
