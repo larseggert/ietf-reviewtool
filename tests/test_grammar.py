@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0
 
 import unittest
 
-from ietf_reviewtool.grammar import advance_to, line_starts
+from ietf_reviewtool.grammar import advance_to, code_lines, fmt_message, line_starts
 from ietf_reviewtool.util.docposition import DocPosition
 from ietf_reviewtool.util.text import unfold
 
@@ -92,6 +92,37 @@ class TestAdvanceTo(unittest.TestCase):
             cur = advance_to(doc_pos, self.lines, starts, cur, offset)
             with self.subTest(word=word):
                 self.assertEqual(doc_pos.fmt_section_and_paragraph(), heading + "\n")
+
+
+class TestCodeLines(unittest.TestCase):
+    """Tests for code_lines()."""
+
+    def test_code_lines(self):
+        """Lines from <CODE BEGINS> through <CODE ENDS> are code."""
+        lines = [
+            "   Text before.\n",
+            "   <CODE BEGINS> file \"x.c\"\n",
+            "   int f(void);\n",
+            "   <CODE ENDS>\n",
+            "   Text after.\n",
+        ]
+        self.assertEqual(code_lines(lines), [False, True, True, True, False])
+
+
+class TestFmtMessage(unittest.TestCase):
+    """Tests for fmt_message()."""
+
+    def test_space(self):
+        """Spaces are not called white, which reads oddly next to inclusivity nits."""
+        self.assertEqual(
+            fmt_message("It appears that a white space is missing."),
+            "It appears that a space is missing.",
+        )
+        self.assertEqual(fmt_message("Missing whitespace"), "Missing space.")
+
+    def test_quotes(self):
+        """Typographic quotes become plain ones."""
+        self.assertEqual(fmt_message("Use “on”"), 'Use "on".')
 
 
 if __name__ == "__main__":
