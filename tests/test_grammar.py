@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0
 
 import unittest
 
-from ietf_reviewtool.grammar import advance_to, code_lines, fmt_message, line_starts
+from ietf_reviewtool.grammar import _SKIP_RULES, advance_to, code_lines, fmt_message, line_starts
 from ietf_reviewtool.util.docposition import DocPosition
 from ietf_reviewtool.util.text import unfold
 
@@ -135,6 +135,16 @@ class TestFmtMessage(unittest.TestCase):
     def test_quotes(self):
         """Typographic quotes become plain ones."""
         self.assertEqual(fmt_message("Use “on”"), 'Use "on".')
+
+class TestSkipRules(unittest.TestCase):
+    """Tests for the skipped LanguageTool rules."""
+
+    def test_unpaired_symbols_skipped(self):
+        """Pairing checks misfire on technical text, for brackets and quotes alike."""
+        # LanguageTool 6.x checks quotes in a rule separate from brackets
+        for rule in ("EN_UNPAIRED_BRACKETS", "EN_UNPAIRED_QUOTES"):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, _SKIP_RULES)
 
 
 if __name__ == "__main__":
