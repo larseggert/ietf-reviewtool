@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0
 
 import unittest
 
-from ietf_reviewtool.grammar import advance_to, line_starts
+from ietf_reviewtool.grammar import _SKIP_RULES, advance_to, line_starts
 from ietf_reviewtool.util.docposition import DocPosition
 from ietf_reviewtool.util.text import unfold
 
@@ -92,6 +92,17 @@ class TestAdvanceTo(unittest.TestCase):
             cur = advance_to(doc_pos, self.lines, starts, cur, offset)
             with self.subTest(word=word):
                 self.assertEqual(doc_pos.fmt_section_and_paragraph(), heading + "\n")
+
+
+class TestSkipRules(unittest.TestCase):
+    """Tests for the skipped LanguageTool rules."""
+
+    def test_unpaired_symbols_skipped(self):
+        """Pairing checks misfire on technical text, for brackets and quotes alike."""
+        # LanguageTool 6.x checks quotes in a rule separate from brackets
+        for rule in ("EN_UNPAIRED_BRACKETS", "EN_UNPAIRED_QUOTES"):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, _SKIP_RULES)
 
 
 if __name__ == "__main__":
