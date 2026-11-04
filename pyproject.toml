@@ -1,6 +1,6 @@
 [project]
 name = "ietf-reviewtool"
-version = "0.6.1"
+version = "0.7.0"
 description = "Review tool for IETF documents"
 authors = [{name = "Lars Eggert", email = "lars@eggert.org"}]
 readme = "README.md"
