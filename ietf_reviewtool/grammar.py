@@ -63,6 +63,61 @@ _SKIP_RULES = {
     "WORD_CONTAINS_UNDERSCORE",
 }
 
+# Rules about spacing, which has meaning in code and other formal languages
+_SPACE_RULES = {
+    "CURRENCY_SPACE",
+    "SPACE_BEFORE_PARENTHESIS",
+    "SPACE_BETWEEN_NUMBER_AND_WORD",
+}
+
+# patterns matching the lines that start and end a code block, the former possibly
+# followed by the name of the file the code is in
+CODE_BEGINS = re.compile(r"^\s*<CODE BEGINS>(?:\s|$)")
+CODE_ENDS = re.compile(r"^\s*<CODE ENDS>\s*$")
+
+
+def code_lines(lines: list[str]) -> list[bool]:
+    """
+    Return whether each line is in a "CODE BEGINS/CODE ENDS" block.
+
+    @param      lines  The lines of text
+
+    @return     Whether each line is in a code block, including its markers.
+    """
+    in_code = False
+    result = []
+    for line in lines:
+        if CODE_BEGINS.match(line):
+            in_code = True
+        result.append(in_code)
+        if CODE_ENDS.match(line):
+            in_code = False
+    return result
+
+
+def fmt_message(message: str) -> str:
+    """
+    Return a LanguageTool message in the style of the review.
+
+    @param      message  The message
+
+    @return     The message, with plain quotes and ending in punctuation.
+    """
+    message = (
+        message.replace("“", '"')
+        .replace("’s", "'s")
+        .replace("n’t", "n't")
+        .replace("”", '"')
+        .replace("‘", '"')
+        .replace("’", '"')
+    )
+    # "white space" reads oddly in a review that also flags non-inclusive terms
+    message = re.sub(r"\bwhite ?space\b", "space", message)
+
+    if not re.search(r".*[.!?]$", message):
+        message += "."
+    return message
+
 
 def _check_text_chunked(lt: language_tool_python.LanguageTool, full_text: str) -> list:
     """
@@ -186,10 +241,15 @@ def check_grammar(
         and i.rule_id not in extra_skip
     ]
 
+    in_code = code_lines(text)
     doc_pos = DocPosition(base_indent=body_indent(text))
     cur = 0
     for issue in issues:
         cur = advance_to(doc_pos, text, starts, cur, issue.offset)
+        if issue.rule_id in _SPACE_RULES and (
+            doc_pos.kind == "fig" or in_code[max(cur - 1, 0)]
+        ):
+            continue
 
         nit = doc_pos.fmt_section_and_paragraph()
         if review.mkd:
@@ -216,17 +276,7 @@ def check_grammar(
         if review.mkd:
             nit += "```\n"
 
-        message = (
-            issue.message.replace("“", '"')
-            .replace("’s", "'s")
-            .replace("n’t", "n't")
-            .replace("”", '"')
-            .replace("‘", '"')
-            .replace("’", '"')
-        )
-
-        if not re.search(r".*[.!?]$", message):
-            message += "."
+        message = fmt_message(issue.message)
 
         if show_rule_id:
             message = f"{message} [{issue.rule_id}]"
